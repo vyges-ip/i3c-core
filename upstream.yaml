@@ -1,0 +1,17 @@
+schema_version: "vyges-upstream-v1"
+upstream:
+  type: "standalone"
+  repo: https://github.com/chipsalliance/i3c-core
+  branch: main
+  commit: 694de2e1cbaab6ab75ff95bceb03ddb5b175d725
+import:
+  rtl:
+    - path: "src"
+      map_to: "rtl"
+  license:
+    - path: "LICENSE"
+  readme:
+    - path: "README.md"
+license:
+  spdx: Apache-2.0
+  file: LICENSE
