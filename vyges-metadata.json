@@ -1,0 +1,57 @@
+{
+  "$schema": "https://vyges.com/schema/v1/vyges-metadata.schema.json",
+  "x-version": "1.0.0",
+  "name": "i3c-core",
+  "version": "0.1.0",
+  "description": "IP imported from https://github.com/chipsalliance/i3c-core",
+  "license": "Apache-2.0",
+  "maturity": "draft",
+  "target": [
+    "asic",
+    "fpga"
+  ],
+  "design_type": [
+    "digital"
+  ],
+  "created": "2026-03-27T21:42:35Z",
+  "updated": "2026-03-27T21:42:35Z",
+  "source": {
+    "type": "git",
+    "url": "https://github.com/chipsalliance/i3c-core",
+    "commit": "694de2e1cbaab6ab75ff95bceb03ddb5b175d725",
+    "private": false,
+    "indexing": true
+  },
+  "maintainers": [
+    {
+      "name": "Vyges",
+      "email": "team@vyges.com",
+      "github": "vyges"
+    }
+  ],
+  "interfaces": [],
+  "parameters": [],
+  "architecture": {
+    "type": "peripheral",
+    "features": []
+  },
+  "categories": {
+    "primary": "uncategorized",
+    "secondary": [],
+    "tags": []
+  },
+  "trust": {
+    "verification_level": "unknown",
+    "maintained": true
+  },
+  "_note": "AI enrichment failed. Manual population needed.",
+  "meta": {
+    "template": {
+      "generator": "upstream-sync-fallback",
+      "generated_at": "2026-03-27T21:42:35Z"
+    },
+    "schema": {
+      "version": "1.0.0"
+    }
+  }
+}
