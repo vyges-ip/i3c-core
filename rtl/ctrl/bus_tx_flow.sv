@@ -1,214 +1,318 @@
 /*
-SPDX-License-Identifier: Apache-2.0
+  SPDX-License-Identifier: Apache-2.0
 
-This module is supposed to control the data flow on the I3C bus. External modules can
-assert following requests to drive the bus:
-- send data byte,
-- send tbit/ACK/NACK.
+  This module controls the low-level aspects of the SDA transmit data flow on the I3C bus. It drives
+  both the data value and the drive mode (OpenDrain or PushPull) of the SDA pad.
+  Note: No logic apart from static and guaranteed glitch-free muxing must be inserted between this
+        module and the physical SDA pad!
 
-In order to request a transfer, assert `req_byte_i` or `req_bit_i` and set the requested value
-`req_value_i`. If request is single bit, the LSB of `req_value_i` will be transferred. Request
-signals should be asserted until `bus_tx_done_o` is not asserted. Then request should be either
-deasserted or immediately configured for new transfer.
+  External modules can send following request types to drive the bus:
+  - Send raw data bits, including regular ACK/NACK,
+  - Send raw data bytes
+  - Initiate an IBI with address as byte payload
+  - Send an ACK following a write request by the contoller which requires special handoff
+  - Send TbitAbort in a private read, requiring half-bit drive mode change
+  - Send TbitContinue in a private read, requiring special checks for controller-side abort
 
-Notes:
-* The `bus_tx_done_o` is single pulse indicator for finished transfers.
-* Asserting both `req_byte_i` and `req_bit_i` will cause an error assertion on `req_error_o`
-* The `abort_i` cancels request and releases the bus immediately
-* Before asserting a request, ensure `bus_tx_idle_o` is HIGH
-
+  Requests are made through the tx_req_i struct port which encapsulates all required information.
+  Feedback is provided through tx_rsp_o, including any error states.
 */
 
-module bus_tx_flow (
-    input logic clk_i,
-    input logic rst_ni,
+module bus_tx_flow import i3c_pkg::*; (
+  input  logic clk_i,
+  input  logic rst_ni,
 
-    // I3C bus timings
-    input logic [19:0] t_r_i,       // rise time of both SDA and SCL in clock units
-    input logic [19:0] t_su_dat_i,  // data setup time in clock units
-    input logic [19:0] t_hd_dat_i,  // data hold time in clock units
+  // Input I3C Bus events
+  input  bus_state_t bus_i,
 
-    // Input I3C Bus events
-    input logic scl_negedge_i,
-    input logic scl_posedge_i,
-    input logic scl_stable_low_i,
+  // Tx request in
+  input  bus_tx_req_t tx_req_i,
 
-    // Bus flow control
-    input logic req_byte_i,
-    input logic req_bit_i,
-    input logic [7:0] req_value_i,
-    output logic bus_tx_done_o,
-    output logic bus_tx_idle_o,
-    output logic req_error_o,
-    output logic bus_error_o,
+  // Tx response out
+  output bus_tx_rsp_t tx_rsp_o,
 
-    // Open Drain / Push Pull
-    input  logic sel_od_pp_i,
-    output logic sel_od_pp_o,
+  // Open Drain / Push Pull
+  output logic sel_od_pp_o,
 
-    output logic sda_o  // Output I3C SDA bus line
+  // Output enable for SDA pad
+  output logic sda_oe_o,
+
+  // Output I3C SDA bus line
+  output logic sda_o
 );
-  logic drive_bit_en;
-  logic drive_bit_value;
-  logic [3:0] bit_counter;
 
-  logic tx_idle;
-  logic tx_done;  // Indicate finished bit write
-  logic bus_tx_done;
-  logic bus_tx_idle;
-  logic bit_counter_en;
+  // Signals
+  logic       bit_counter_en;
+  logic [3:0] bit_counter_q, bit_counter_d;
 
-  logic [7:0] req_value;
-  logic [1:0] reqs;
-  logic req;
-  logic req_error;
-  logic bus_error;
-  logic error;
+  // Registers for all critical signals directly connected to the SDA pad
+  i3c_byte_t  req_value_q, req_value_d;
+  i3c_drive_e drive_mode_q, drive_mode_d;
+  logic       sda_oe_q, sda_oe_d;
 
-  assign reqs = {req_byte_i, req_bit_i};
-  assign req = |reqs;
-  // Clever way to ensure that only one bit is HIGH
-  // Source: https://stackoverflow.com/a/11235598
-  // It might be optimized if we're sure there are only 2 requests at most
-  assign req_error = ~(~|(reqs & (reqs - 1)));
-
-  // TODO: Connect to bus_tx module error output signal
-  assign bus_error = '0;
-  assign error = req_error | bus_error;
-
-  always_ff @(posedge clk_i or negedge rst_ni) begin : update_bit_counter
-    if (~rst_ni) begin
-      bit_counter <= '0;
-    end else begin
-      if (bit_counter_en) begin
-        if (tx_done) begin
-          if (bit_counter == 4'h0) bit_counter <= 4'h7;
-          else bit_counter <= bit_counter - 1;
-        end else bit_counter <= bit_counter;
-      end else begin
-        bit_counter <= 4'h7;
-      end
-    end
-  end
-
-  always_ff @(posedge clk_i or negedge rst_ni) begin : update_req_value
-    if (~rst_ni) begin
-      req_value <= '0;
-    end else begin
-      if (bit_counter_en) begin
-        if (tx_done) req_value[7:0] <= {req_value[6:0], 1'b0};
-      end else if (bit_counter == 4'h7) begin
-        req_value <= req_value_i;
-      end else begin
-        req_value <= '0;
-      end
-    end
-  end
+  logic tx_done;     // Indicates finished bit write
+  logic bus_tx_done; // Feedback to requester that transfer is done
+  logic bus_tx_abort;
 
   typedef enum logic [2:0] {
     Idle,
     DriveByte,
-    DriveBit,
-    NextTaskDecision
+    NextTaskDecision,
+    WaitNegEdge,
+    WaitPosEdge,
+    TReadContSpecial
   } tx_state_e;
 
   tx_state_e state_d, state_q;
 
-  always_ff @(posedge clk_i or negedge rst_ni) begin : update_fsm_state
-    if (~rst_ni) begin
-      state_q <= Idle;
-    end else begin
-      state_q <= state_d;
-    end
-  end
+  // SDA is simply the MSB of the data shift register. No further logic or muxing.
+  // Similar for pad drive mode and output enable.
+  assign sda_o = req_value_q[7];
+  assign sel_od_pp_o = drive_mode_q;
+  assign sda_oe_o = sda_oe_q;
 
-  always_comb begin : tx_fsm_outputs
-    bus_tx_idle = '0;
-    bus_tx_done = '0;
-    drive_bit_en = '0;
-    drive_bit_value = 1'b1;  // Pullup by default
-    bit_counter_en = '0;
+  /*
+    Truth table for sda_oe.
 
-    unique case (state_q)
-      Idle: begin
-        bus_tx_idle  = tx_idle;
-        drive_bit_en = tx_idle ? req : 1'b0;
-        drive_bit_value = req_byte_i ? req_value_i[7] : req_value_i[0];
-      end
-      DriveByte: begin
-        bit_counter_en = 1'b1;
-        drive_bit_en = req;
-        drive_bit_value = req_value[7];
-        if (~|bit_counter & tx_done) begin
-          bus_tx_done = 1'b1;
-        end
-      end
-      DriveBit: begin
-        drive_bit_value = req_value[0];
-        drive_bit_en = req;
-        if (tx_done) bus_tx_done = 1'b1;
-      end
-      NextTaskDecision: begin
-        drive_bit_en = req;
-        drive_bit_value = req_value_i[0];
-      end
-      default: ;
-    endcase
-  end
+    sel_od_pp_o | sda_o  || sda_oe_o | IO state
+    ------------+--------++----------+-----------
+         0      |   0    ||    1     |    0
+         0      |   1    ||    0     |   hi-z
+         1      |   0    ||    1     |    0
+         1      |   1    ||    1     |    1
+  */
+  assign sda_oe_d = drive_mode_d || !req_value_d[7];
 
-  always_comb begin : tx_fsm_state
-    state_d = state_q;
-
-    unique case (state_q)
-      Idle: begin
-        if (tx_idle) begin
-          state_d = req_byte_i ? DriveByte : req_bit_i ? DriveBit : Idle;
-        end
-      end
-      DriveByte: begin
-        if (bus_tx_done) begin
-          state_d = NextTaskDecision;
-        end
-      end
-      DriveBit: begin
-        if (tx_done) begin
-          state_d = NextTaskDecision;
-        end
-      end
-      NextTaskDecision: begin
-        state_d = req_byte_i ? DriveByte : req_bit_i ? DriveBit : Idle;
-      end
-      default: begin
-        state_d = Idle;
-      end
-    endcase
-
-    // Allow to abort and go back to Idle if needed
-    if (~req | error) begin
-      state_d = Idle;
-    end
-  end
-
-  bus_tx xbus_tx (
-      .clk_i,
-      .rst_ni,
-      .t_r_i,
-      .t_su_dat_i,
-      .t_hd_dat_i,
-      .drive_i(drive_bit_en),
-      .drive_value_i(drive_bit_value),
-      .scl_negedge_i,
-      .scl_posedge_i,
-      .scl_stable_low_i,
-      .sel_od_pp_i,
-      .sel_od_pp_o,
-      .tx_idle_o(tx_idle),
-      .tx_done_o(tx_done),
-      .sda_o
+  // Common logic whenever a transfer gets started, including back-to-back transfers
+  function automatic tx_state_e start_transfer(
+    input  bus_tx_req_t bus_tx_req,
+    output i3c_byte_t   req_value,
+    output i3c_drive_e  drive_mode,
+    output logic        counter_en
   );
 
-  assign req_error_o   = req_error;
-  assign bus_error_o   = bus_error;
-  assign bus_tx_idle_o = bus_tx_idle;
-  assign bus_tx_done_o = bus_tx_done;
+    // Unconditional default values to keep Lint happy
+    req_value  = '1;
+    drive_mode = OpenDrain;
+    counter_en = 1'b0;
+
+    // Decide on value and drive mode following SCL negedge
+    case (bus_tx_req.req_type)
+      RawByte: begin
+        req_value    = bus_tx_req.data;
+        drive_mode   = bus_tx_req.drive_type;
+      end
+      RawBit: begin
+        req_value    = {bus_tx_req.data[7], {7{1'b1}}};
+        drive_mode   = bus_tx_req.drive_type;
+      end
+      AckIbi: begin
+        req_value    = '1;
+        drive_mode   = OpenDrain;
+      end
+      AckRegular, AckHandoff: begin
+        req_value[7] = 1'b0;
+        drive_mode   = OpenDrain;
+      end
+      TReadCont: begin
+        req_value[7] = 1'b1;
+        drive_mode   = PushPull;
+      end
+      TReadEnd: begin
+        req_value[7] = 1'b0;
+        drive_mode   = PushPull;
+      end
+      InitIbi: begin
+        req_value    = bus_tx_req.data; // Data is IBI address
+        drive_mode   = OpenDrain;
+      end
+      default: begin end
+    endcase
+
+    // Most request types are only a single bit in length; completion can be signalled at the next
+    // SCL rising edge.
+    if (bus_tx_req.req_type inside {RawByte, InitIbi}) begin
+      // Enable bit counter and work on full byte in DriveByte
+      counter_en = 1'b1;
+      return DriveByte;
+    end else begin
+      counter_en = 1'b0;
+      return WaitPosEdge;
+    end
+
+  endfunction : start_transfer
+
+  // Bit counter used for byte transfers
+  always_comb begin
+    bit_counter_d = bit_counter_q;
+
+    if (bit_counter_en) begin
+      if (tx_done) begin
+        bit_counter_d = (bit_counter_q == 4'd0) ? 4'd7 : bit_counter_q - 1;
+      end
+    end else begin
+      bit_counter_d = 4'd7;
+    end
+  end
+
+  // Main FSM which handles all low-level bus details in terms of transmitting
+  always_comb begin : tx_fsm
+    bit_counter_en = 1'b0;
+
+    tx_done      = 1'b0;
+    bus_tx_done  = 1'b0;
+    bus_tx_abort = 1'b0;
+
+    req_value_d  = req_value_q;
+    drive_mode_d = drive_mode_q;
+    state_d      = state_q;
+    unique case (state_q)
+      Idle: begin
+        if (tx_req_i.req_valid) begin
+          if (tx_req_i.req_type == InitIbi) begin
+            // Drive 0 in OD on SDA and wait until the controller gives us a negedge on SCL
+            // Note: The controller also could've started to drive SDA below and it will take the
+            // delay through the SDA synchronizer for us to detect this, however, this does not
+            // present any timing or driving conflict issue.
+            req_value_d[7] = 1'b0;
+            drive_mode_d   = OpenDrain;
+          end
+          // For IBI, this state is 2-in-1: First, SDA is driven low above to initiate the IBI by
+          // generating a "target-side start condition". Next, on the SCL negedge that follows,
+          // initiated by the controller, we have to immediately drive out the first bit of the IBI
+          // address, which gets done below as the regular byte payload, which is also used for 
+          // non-IBI frames/transfers.
+          // Since no clocking event happens between these two phases, we cannot make any state
+          // transition and have to handle both in the same state.
+          if (bus_i.scl.neg_edge || bus_i.scl.stable_low) begin
+            state_d = start_transfer(tx_req_i, req_value_d, drive_mode_d, bit_counter_en);
+          end else begin
+            state_d = WaitNegEdge;
+          end
+        end
+      end
+      WaitNegEdge: begin
+        if (bus_i.scl.neg_edge) begin
+          state_d = start_transfer(tx_req_i, req_value_d, drive_mode_d, bit_counter_en);
+        end
+      end
+      DriveByte: begin
+        if (tx_req_i.req_valid) begin
+          bit_counter_en = 1'b1;
+          // Simply wait for next edge
+          if (bus_i.scl.neg_edge) begin
+            tx_done = 1'b1;
+            // Shift the register which drives sda left to get next bit
+            req_value_d = {req_value_q[6:0], 1'b1};
+            // Last bit; wait for one more posedge to signal request completion
+            if (bit_counter_q == 4'd1) begin
+              state_d = WaitPosEdge;
+            end
+          end
+        end else begin
+          // Requester cancelled the transaction, e.g., a bus stop condition has occurred or
+          // arbitration was lost during the address phase.
+          drive_mode_d = OpenDrain;
+          req_value_d  = '1;
+          state_d = Idle;
+        end
+      end
+      WaitPosEdge: begin
+        // Wait for posedge to avoid following rx requests sampling this bit as well
+        if (bus_i.scl.pos_edge) begin
+          // Handle all cases that require half-bit changes to SDA data and drive mode
+          case (tx_req_i.req_type)
+            AckHandoff: begin
+              // Release SDA in the middle of ACK to high-Z; Controller takes over driving
+              // Specified in Section 5.1.2.3.1
+              req_value_d[7] = 1'b1;
+            end
+            AckIbi: begin
+              // Take over to drive SDA low in PP in case of an IBI Ack by the controller
+              // Specified in Section 5.1.2.3.2
+              if (bus_i.sda.value == 1'b0) begin
+                req_value_d[7] = 1'b0;
+                drive_mode_d = PushPull;
+              end
+            end
+            TReadEnd, TReadCont: begin
+              // Both cases require to release SDA to high-Z; in case of TReadEnd, the Controller
+              // will take over driving SDA low. In case of TReadCont, the Controller may drive SDA
+              // low after the rising edge to signal a read abort to us.
+              // Specified in Section 5.1.2.3.4
+              req_value_d[7] = 1'b1;
+              drive_mode_d = OpenDrain;
+            end
+            default: begin end
+          endcase
+          // In most cases the transaction is completed; flag this to the requester. For TReadCont,
+          // we however must wait until the next SCL negedge, as the Controller may sent an Rs
+          // between then and the SCL posedge that just happened to deny our request to continue.
+          if (tx_req_i.req_type == TReadCont) begin
+            state_d = TReadContSpecial;
+          end else begin
+            bus_tx_done = 1'b1;
+            state_d = NextTaskDecision;
+          end
+        end
+      end
+      TReadContSpecial: begin
+        // If we see an SDA negedge before the next SCL negedge, the Controller aborted the read
+        if (bus_i.sda.neg_edge) begin
+          bus_tx_abort = 1'b1;
+          state_d = Idle;
+        end
+        // Controller has accepted to continue and the requester has provided the respective data
+        // already as part of the TReadCont request such that we are able to clock out the MSB
+        // on this very negedge. Continue with the remaining 7 bits in DriveByte.
+        if (bus_i.scl.neg_edge) begin
+          bus_tx_done    = 1'b1;
+          bit_counter_en = 1'b1;
+          drive_mode_d = PushPull;
+          req_value_d  = tx_req_i.data;
+          state_d      = DriveByte;
+        end
+      end
+      NextTaskDecision: begin
+        if (bus_i.scl.neg_edge) begin
+          if (tx_req_i.req_valid) begin
+            // Back-to-back transfer pending, immediately service it
+            state_d = start_transfer(tx_req_i, req_value_d, drive_mode_d, bit_counter_en);
+          end else begin
+            // Reset sda_o to High-Z & back to Idle
+            drive_mode_d = OpenDrain;
+            req_value_d  = '1;
+            state_d = Idle;
+          end
+        end
+      end
+      default: begin end
+    endcase
+  end
+
+  assign tx_rsp_o = '{
+    // FUTUREFIX: error is unused; available for future bus error reporting
+    error: 1'b0,
+    idle:  (state_q == Idle),
+    done:  bus_tx_done,
+    abort: bus_tx_abort
+  };
+
+  // Sequential process for all flops
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (~rst_ni) begin
+      bit_counter_q <= '0;
+      req_value_q   <= '1;
+      drive_mode_q  <= OpenDrain;
+      sda_oe_q      <= 1'b0;
+      state_q       <= Idle;
+    end else begin
+      bit_counter_q <= bit_counter_d;
+      req_value_q   <= req_value_d;
+      drive_mode_q  <= drive_mode_d;
+      sda_oe_q      <= sda_oe_d;
+      state_q       <= state_d;
+    end
+  end
+
 endmodule

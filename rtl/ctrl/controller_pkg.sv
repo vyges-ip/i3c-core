@@ -7,7 +7,7 @@ package controller_pkg;
 
   parameter int unsigned I2cAcqByteIdWidth = 3;
 
-  // TODO(#22028) encode this more efficiently in the ACQ FIFO. Each entry in the
+  // FUTUREFIX(#22028) encode this more efficiently in the ACQ FIFO. Each entry in the
   // ACQ FIFO does not need to contain both an 8 bit data field and a 3 bit
   // identifier. We should have the ACQ FIFO be 9 bits wide where the MSB
   // indicates whether it is a data byte or a control byte. This way we can
@@ -53,8 +53,6 @@ package controller_pkg;
   // To raise errors
   typedef struct packed {logic err_0;} i3c_err_t;
 
-  // To raise interrupts
-  typedef struct packed {logic irq_0;} i3c_irq_t;
 
   typedef enum logic {
     Write = 1'b0,
@@ -79,5 +77,16 @@ package controller_pkg;
     logic [4:0] __rsvd11_7;
     logic [6:0] static_address;
   } dat_entry_t;
+
+  typedef struct packed {
+    logic [23:0] __rsvd127_104;
+    logic [7:0]  dynamic_address;
+    logic [15:0] __rsvd95_80;
+    logic [7:0]  bcr;
+    logic [7:0]  dcr;
+    logic [15:0] __rsvd63_48;
+    logic [15:0] pid_lo;
+    logic [31:0] pid_hi;
+  } dct_entry_t;
 
 endpackage

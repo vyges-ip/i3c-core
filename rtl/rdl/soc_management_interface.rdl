@@ -1,6 +1,8 @@
 // I3C controller register map based on MIPI HCI 1.2
 
-regfile SoCManagementInterfaceRegisters {
+regfile SoCManagementInterfaceRegisters #(
+    bit T_WIDTH = 20
+) {
     name = "SoC Management Interface";
     default regwidth = 32;
     reg {
@@ -10,7 +12,7 @@ regfile SoCManagementInterfaceRegisters {
             desc = "Capability Structure Length in DWORDs";
             sw = r;
             hw = r;
-            reset = 16'h0018;
+            reset = 16'h001A;
         } CAP_LENGTH[23:8];
         field {
             name = "CAP_ID";
@@ -275,7 +277,7 @@ regfile SoCManagementInterfaceRegisters {
             sw = rw;
             hw = r;
             reset = 20'h00000;
-        } T_R[19:0];
+        } T_R[T_WIDTH-1:0];
     } T_R_REG;
     reg {
         name = "";
@@ -285,7 +287,7 @@ regfile SoCManagementInterfaceRegisters {
             sw = rw;
             hw = r;
             reset = 20'h00000;
-        } T_F[19:0];
+        } T_F[T_WIDTH-1:0];
     } T_F_REG;
     reg {
         name = "";
@@ -295,8 +297,18 @@ regfile SoCManagementInterfaceRegisters {
             sw = rw;
             hw = r;
             reset = 20'h00000;
-        } T_SU_DAT[19:0];
+        } T_SU_DAT[T_WIDTH-1:0];
     } T_SU_DAT_REG;
+    reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Data setup time in I2C mode in clock units";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_SU_DAT_I2C[T_WIDTH-1:0];
+    } T_SU_DAT_I2C_REG;
     reg {
         name = "";
         field {
@@ -305,7 +317,7 @@ regfile SoCManagementInterfaceRegisters {
             sw = rw;
             hw = r;
             reset = 20'h00000;
-        } T_HD_DAT[19:0];
+        } T_HD_DAT[T_WIDTH-1:0];
     } T_HD_DAT_REG;
     reg {
         name = "";
@@ -315,8 +327,38 @@ regfile SoCManagementInterfaceRegisters {
             sw = rw;
             hw = r;
             reset = 20'h00000;
-        } T_HIGH[19:0];
+        } T_HIGH[T_WIDTH-1:0];
     } T_HIGH_REG;
+    reg {
+        name = "";
+        field {
+            name = "High period of the SCL in Open-Drain mode in clock units";
+            desc = "";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_HIGH_OD[T_WIDTH-1:0];
+    } T_HIGH_OD_REG;
+    reg {
+        name = "";
+        field {
+            name = "High period of the SCL in Open-Drain mode during bus initialization in clock units";
+            desc = "";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_HIGH_INIT_OD[T_WIDTH-1:0];
+    } T_HIGH_INIT_OD_REG;
+    reg {
+        name = "";
+        field {
+            name = "High period of the SCL in I2C mode in clock units";
+            desc = "";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_HIGH_I2C[T_WIDTH-1:0];
+    } T_HIGH_I2C_REG;
     reg {
         name = "";
         field {
@@ -325,18 +367,58 @@ regfile SoCManagementInterfaceRegisters {
             sw = rw;
             hw = r;
             reset = 20'h00000;
-        } T_LOW[19:0];
+        } T_LOW[T_WIDTH-1:0];
     } T_LOW_REG;
     reg {
         name = "";
         field {
             name = "";
-            desc = "Hold time for (repeated) START in clock units";
+            desc = "Low period of the SCL in Open-Drain mode in clock units";
             sw = rw;
             hw = r;
             reset = 20'h00000;
-        } T_HD_STA[19:0];
+        } T_LOW_OD[T_WIDTH-1:0];
+    } T_LOW_OD_REG;
+    reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Low period of the SCL in I2C mode in clock units";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_LOW_I2C[T_WIDTH-1:0];
+    } T_LOW_I2C_REG;
+    reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Hold time for START in clock units";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_HD_STA[T_WIDTH-1:0];
     } T_HD_STA_REG;
+    reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Hold time for START in I2C mode in clock units";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_HD_STA_I2C[T_WIDTH-1:0];
+    } T_HD_STA_I2C_REG;
+     reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Hold time for repeated START in clock units";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_HD_RSTA[T_WIDTH-1:0];
+    } T_HD_RSTA_REG;
     reg {
         name = "";
         field {
@@ -345,8 +427,18 @@ regfile SoCManagementInterfaceRegisters {
             sw = rw;
             hw = r;
             reset = 20'h00000;
-        } T_SU_STA[19:0];
+        } T_SU_STA[T_WIDTH-1:0];
     } T_SU_STA_REG;
+    reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Setup time for repeated START in I2C mode in clock units";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_SU_STA_I2C[T_WIDTH-1:0];
+    } T_SU_STA_I2C_REG;
     reg {
         name = "";
         field {
@@ -355,18 +447,48 @@ regfile SoCManagementInterfaceRegisters {
             sw = rw;
             hw = r;
             reset = 20'h00000;
-        } T_SU_STO[19:0];
+        } T_SU_STO[T_WIDTH-1:0];
     } T_SU_STO_REG;
     reg {
         name = "";
         field {
             name = "";
-            desc = "";
+            desc = "Setup time for STOP in in I2C mode clock units";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_SU_STO_I2C[T_WIDTH-1:0];
+    } T_SU_STO_I2C_REG;
+    reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Setup time for SDA during START in clock units";
+            sw = rw;
+            hw = r;
+            reset = 20'h00000;
+        } T_DS_OD[T_WIDTH-1:0];
+    } T_DS_OD_REG;
+    reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Bus Free Time Between a STOP and a START";
             sw = rw;
             hw = r;
             reset = 32'h0000000C;
         } T_FREE[31:0];
     } T_FREE_REG;
+    reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Bus Free Time Between a STOP and a START in I2C mode";
+            sw = rw;
+            hw = r;
+            reset = 32'h0000000C;
+        } T_FREE_I2C[31:0];
+    } T_FREE_I2C_REG;
     reg {
         name = "";
         field {
@@ -381,10 +503,30 @@ regfile SoCManagementInterfaceRegisters {
         name = "";
         field {
             name = "";
-            desc = "";
+            desc = "Time in clock cycles from STOP detection until Bus Idle Condition (tIDLE). Configure based on System Clock";
             sw = rw;
             hw = r;
             reset = 32'h0000EA60;
         } T_IDLE[31:0];
     } T_IDLE_REG;
+    reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Enable bit for the optional 60us HDR error recovery timer (I3C spec 5.1.10.1.9). When enabled, the Target can recover from TE0/TE1 errors if both SCL and SDA stay High for a period exceeding the configured threshold. Disabled on reset.";
+            sw = rw;
+            hw = r;
+            reset = 1'b0;
+        } HDR_TIMEOUT_EN[0:0];
+    } HDR_TIMEOUT_EN_REG;
+    reg {
+        name = "";
+        field {
+            name = "";
+            desc = "Timer threshold in clock cycles for the optional HDR error recovery (I3C spec 5.1.10.1.9). If both SCL and SDA stay High for this many clock cycles during a TE0/TE1 error-induced HDR mode, the Target exits HDR mode and returns to Idle. Configure based on System Clock to achieve 60us.";
+            sw = rw;
+            hw = r;
+            reset = 20'hEA60;
+        } T_HDR_TIMEOUT[19:0];
+    } T_HDR_TIMEOUT_REG;
 };

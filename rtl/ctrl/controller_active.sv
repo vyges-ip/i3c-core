@@ -36,6 +36,7 @@ module controller_active
     output logic ctrl_scl_o[2],
     output logic ctrl_sda_o[2],
     output logic phy_sel_od_pp_o[2],
+    output logic is_i2c_transfer_o,
 
     // HCI queues
     // Command FIFO
@@ -90,9 +91,10 @@ module controller_active
     output logic [HciIbiDataWidth-1:0] ibi_queue_wdata_o,
 
     // DAT <-> Controller interface
-    output logic                          dat_read_valid_hw_o,
-    output logic [$clog2(`DAT_DEPTH)-1:0] dat_index_hw_o,
-    input  logic [                  63:0] dat_rdata_hw_i,
+    input  dat_mem_sink_t                          dat_mem_sink_i,
+    output logic                                   dat_read_valid_hw_o,
+    output logic          [$clog2(`DAT_DEPTH)-1:0] dat_index_hw_o,
+    input  logic          [                  63:0] dat_rdata_hw_i,
 
     // DCT <-> Controller interface
     output logic                          dct_write_valid_hw_o,
@@ -101,44 +103,85 @@ module controller_active
     output logic [                 127:0] dct_wdata_hw_o,
     input  logic [                 127:0] dct_rdata_hw_i,
 
-    // TODO: rename
     input  logic i3c_fsm_en_i,
     output logic i3c_fsm_idle_o,
+    input  logic pio_rs_i,
+    input  logic halt_on_cmd_seq_timeout_i,
 
     // Errors and Interrupts
-    output i3c_err_t err,
-    output i3c_irq_t irq,
+    input logic resume_i,
+    input logic abort_i,
+    output i3c_irq_t irq_o,
+    // this signal is taken from the I3CBase.HC_CONTROL.BUS_ENABLE CSR
+    // TODO: use phy_en_i to control if bus is active
     input logic phy_en_i,
+    // this signal will be needed when we are dynamically switching between
+    // active controller mode and target mode
+    // TODO: use phy_mux_select_i to control mode of operation
     input logic [1:0] phy_mux_select_i,
     input logic i2c_active_en_i,
     input logic i2c_standby_en_i,
     input logic i3c_active_en_i,
     input logic i3c_standby_en_i,
-    input logic [19:0] t_hd_dat_i,
-    input logic [19:0] t_r_i,
-    input logic [19:0] t_f_i,
-    input logic [19:0] t_bus_free_i,
-    input logic [19:0] t_bus_idle_i,
-    input logic [19:0] t_bus_available_i
+    input logic [i3c_pkg::TimingWidth-1:0] t_hd_dat_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_r_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_f_i,
+    // I2C timings
+    input logic [i3c_pkg::TimingWidth-1:0] t_low_i2c_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_high_i2c_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_su_sta_i2c_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_hd_sta_i2c_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_su_dat_i2c_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_su_sto_i2c_i,
+
+    // I3C timings
+    input logic [i3c_pkg::TimingWidth-1:0] t_su_dat_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_high_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_high_od_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_high_init_od_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_low_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_low_od_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_hd_sta_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_hd_rsta_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_su_sta_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_su_sto_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_ds_od_i,
+
+
+    input logic [i3c_pkg::TimingWidth-1:0] t_bus_free_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_bus_free_i2c_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_bus_idle_i,
+    input logic [i3c_pkg::TimingWidth-1:0] t_bus_available_i
 
 );
-
+  logic event_nak_o;
   logic host_enable;
+  logic is_i2c_transfer;
   logic fmt_fifo_rvalid;
-  logic [I2CFifoDepthWidth-1:0] fmt_fifo_depth;
+  logic fmt_fifo_rready_i2c;
   logic fmt_fifo_rready;
-  logic [7:0] fmt_byte;
+  logic fmt_fifo_rdone;
+  logic [7:0] fmt_byte, fmt_rx_byte;
+  logic fmt_bit, fmt_rx_bit;
+  logic fmt_receive_nack;
+  logic fmt_sda_arbitration;
   logic fmt_flag_start_before;
   logic fmt_flag_stop_after;
+  logic fmt_flag_restart_after;
+  logic fmt_flag_read_valid;
   logic fmt_flag_read_bytes;
-  logic fmt_flag_read_continue;
+  logic fmt_flag_read_continuous;
   logic fmt_flag_nak_ok;
-  logic unhandled_unexp_nak;
+  logic fmt_flag_hdr_exit;
   logic unhandled_nak_timeout;
   logic rx_fifo_wvalid;
   logic [RxFifoWidth-1:0] rx_fifo_wdata;
-
-  // TODO: Connect I2C Controller SDA/SCL to I3C Flow FSM
+  logic fmt_fifo_rdone_i2c_and_i3c;
+  logic event_cmd_complete;
+  logic i2c_host_idle;
+  logic fmt_fifo_rready_i2c_and_i3c;
+  assign fmt_fifo_rready_i2c_and_i3c = (fmt_fifo_rready & ~is_i2c_transfer) | ((fmt_fifo_rready_i2c | i2c_host_idle) & is_i2c_transfer);
+  assign fmt_fifo_rdone_i2c_and_i3c = (fmt_fifo_rdone & ~is_i2c_transfer) | ((fmt_fifo_rready_i2c) & is_i2c_transfer);
 
   flow_active flow_fsm (
       .clk_i,
@@ -183,6 +226,7 @@ module controller_active
       .ibi_queue_wready_i,
       .ibi_queue_wdata_o,
       .dat_read_valid_hw_o,
+      .dat_mem_sink_i            (dat_mem_sink_i),
       .dat_index_hw_o,
       .dat_rdata_hw_i,
       .dct_write_valid_hw_o,
@@ -190,34 +234,45 @@ module controller_active
       .dct_index_hw_o,
       .dct_wdata_hw_o,
       .dct_rdata_hw_i,
-      .host_enable_o(host_enable),
-      .fmt_fifo_rvalid_o(fmt_fifo_rvalid),
-      .fmt_fifo_depth_o(fmt_fifo_depth),
-      .fmt_fifo_rready_i(fmt_fifo_rready),
-      .fmt_byte_o(fmt_byte),
-      .fmt_flag_start_before_o(fmt_flag_start_before),
-      .fmt_flag_stop_after_o(fmt_flag_stop_after),
-      .fmt_flag_read_bytes_o(fmt_flag_read_bytes),
-      .fmt_flag_read_continue_o(fmt_flag_read_continue),
-      .fmt_flag_nak_ok_o(fmt_flag_nak_ok),
-      .unhandled_unexp_nak_o(unhandled_unexp_nak),
-      .unhandled_nak_timeout_o(unhandled_nak_timeout),
-      .rx_fifo_wvalid_i(rx_fifo_wvalid),
-      .rx_fifo_wdata_i(rx_fifo_wdata),
+      .host_enable_o             (host_enable),
+      .is_i2c_transfer_o         (is_i2c_transfer),
+      .i2c_cmd_complete_i        (event_cmd_complete),
+      .fmt_fifo_rvalid_o         (fmt_fifo_rvalid),
+      .fmt_fifo_rready_i         (fmt_fifo_rready_i2c_and_i3c),
+      .fmt_fifo_rdone_i          (fmt_fifo_rdone_i2c_and_i3c),
+      .fmt_byte_o                (fmt_byte),
+      .fmt_bit_o                 (fmt_bit),
+      .fmt_flag_start_before_o   (fmt_flag_start_before),
+      .fmt_flag_stop_after_o     (fmt_flag_stop_after),
+      .fmt_flag_restart_after_o  (fmt_flag_restart_after),
+      // fmt RX signals
+      .fmt_byte_i                (fmt_rx_byte),
+      .fmt_bit_i                 (fmt_rx_bit),
+      .fmt_flag_read_valid_i     (fmt_flag_read_valid),
+      .fmt_flag_read_bytes_o     (fmt_flag_read_bytes),
+      .fmt_flag_read_continuous_o(fmt_flag_read_continuous),
+      .fmt_receive_nack_i        (fmt_receive_nack | event_nak_o),
+      .fmt_sda_arbitration_i     (fmt_sda_arbitration),
+      .fmt_flag_nak_ok_o         (fmt_flag_nak_ok),
+      .fmt_flag_hdr_exit_o       (fmt_flag_hdr_exit),
+      .unhandled_nak_timeout_o   (unhandled_nak_timeout),
+      .rx_fifo_wvalid_i          (rx_fifo_wvalid),
+      .rx_fifo_wdata_i           (rx_fifo_wdata),
       .i3c_fsm_en_i,
       .i3c_fsm_idle_o,
-      .err,
-      .irq
+      .pio_rs_i,
+      .halt_on_cmd_seq_timeout_i,
+      .resume_i,
+      .abort_i,
+      .irq_o
   );
 
-  logic unused_host_idle_o;
-  logic unused_event_nak_o;
+
   logic unused_event_unhandled_nak_timeout_o;
   logic unused_event_scl_interference_o;
   logic unused_event_sda_interference_o;
   logic unused_event_stretch_timeout_o;
   logic unused_event_sda_unstable_o;
-  logic unused_event_cmd_complete_o;
 
   i2c_controller_fsm i2c_fsm (
       .clk_i (clk_i),
@@ -228,65 +283,100 @@ module controller_active
       .sda_o (ctrl_sda_o[0]),
 
       // These should be controlled by the flow FSM
-      // TODO: reconnect to flow fsm once configuration.sv is connected properly to CSRs
-      .host_enable_i('0),
+      .host_enable_i(is_i2c_transfer),
       .fmt_fifo_rvalid_i(fmt_fifo_rvalid),
-      .fmt_fifo_depth_i(fmt_fifo_depth),
-      .fmt_fifo_rready_o(fmt_fifo_rready),
+      .fmt_fifo_depth_i(8'd1),  // UNUSED
+      .fmt_fifo_rready_o(fmt_fifo_rready_i2c),
       .fmt_byte_i(fmt_byte),
       .fmt_flag_start_before_i(fmt_flag_start_before),
       .fmt_flag_stop_after_i(fmt_flag_stop_after),
       .fmt_flag_read_bytes_i(fmt_flag_read_bytes),
-      .fmt_flag_read_continue_i(fmt_flag_read_continue),
+      .fmt_flag_read_continue_i(fmt_flag_read_continuous),
       .fmt_flag_nak_ok_i(fmt_flag_nak_ok),
-      .unhandled_unexp_nak_i(unhandled_unexp_nak),
+      .unhandled_unexp_nak_i(1'b0),  // UNUSED
       .unhandled_nak_timeout_i(unhandled_nak_timeout),
       .rx_fifo_wvalid_o(rx_fifo_wvalid),
       .rx_fifo_wdata_o(rx_fifo_wdata),
-      .host_idle_o(unused_host_idle_o),
+      .host_idle_o(i2c_host_idle),
 
-      // TODO: Use calculated timing values
-      // TODO: Expose as programmable feature
-      .thigh_i(16'd10),
-      .tlow_i(16'd10),
-      .t_r_i(16'd1),
-      .t_f_i(16'd1),
-      .thd_sta_i(16'd1),
-      .tsu_sta_i(16'd1),
-      .tsu_sto_i(16'd1),
-      .tsu_dat_i(16'd1),
-      .thd_dat_i(16'd1),
-      .t_buf_i(16'd1),
+      .thigh_i(t_high_i2c_i),
+      .tlow_i(t_low_i2c_i),
+      .t_r_i(t_r_i),
+      .t_f_i(t_f_i),
+      .thd_sta_i(t_hd_sta_i2c_i),
+      .tsu_sta_i(t_su_sta_i2c_i),
+      .tsu_sto_i(t_su_sto_i2c_i),
+      .tsu_dat_i(t_su_dat_i2c_i),
+      .thd_dat_i(t_hd_dat_i),
+      .t_buf_i(t_bus_free_i2c_i),
 
       // Clock stretch is not supported by I3C bus
       .stretch_timeout_i('0),
       .timeout_enable_i ('0),
 
-      // TODO: Handle NACK on bus
       .host_nack_handler_timeout_i('0),
       .host_nack_handler_timeout_en_i('0),
 
-      // TODO: Handle bus events
-      .event_nak_o(unused_event_nak_o),
+      .event_nak_o(event_nak_o),
       .event_unhandled_nak_timeout_o(unused_event_unhandled_nak_timeout_o),
       .event_scl_interference_o(unused_event_scl_interference_o),
       .event_sda_interference_o(unused_event_sda_interference_o),
       .event_stretch_timeout_o(unused_event_stretch_timeout_o),
       .event_sda_unstable_o(unused_event_sda_unstable_o),
-      .event_cmd_complete_o(unused_event_cmd_complete_o)
+      .event_cmd_complete_o(event_cmd_complete)
   );
 
-  // TODO: Handle i3c waveform
   i3c_controller_fsm xi3c_controller_fsm (
-      .clk_i(clk_i),
-      .rst_ni(rst_ni),
+      .clk_i,
+      .rst_ni,
+
       .ctrl_scl_i(ctrl_bus_i[1].scl.value),
       .ctrl_sda_i(ctrl_bus_i[1].sda.value),
+      .ctrl_bus_i(ctrl_bus_i[1]),
       .ctrl_scl_o(ctrl_scl_o[1]),
-      .ctrl_sda_o(ctrl_sda_o[1])
+      .ctrl_sda_o(ctrl_sda_o[1]),
+      .phy_sel_od_pp_o(phy_sel_od_pp_o[1]),
+
+      .is_i2c_transfer_i(is_i2c_transfer),
+
+      .thigh_i(t_high_i),
+      .tlow_i(t_low_i),
+      .thigh_od_i(t_high_od_i),
+      .tlow_od_i(t_low_od_i),
+      .thigh_od_init_i(t_high_init_od_i),
+      .t_r_i(t_r_i),
+      .t_f_i(t_f_i),
+      .thd_sta_od_i(t_hd_sta_i),
+      .thd_rsta_i(t_hd_rsta_i),
+      .tsu_rsta_i(t_su_sta_i),  // NOTE: this register is named T_SU_STA for some reason...
+      .tsu_sto_i(t_su_sto_i),
+      .t_ds_od_i(t_ds_od_i),
+      .tsu_dat_i(t_su_dat_i),
+      .thd_dat_i(t_hd_dat_i),
+      .t_buf_i(t_bus_free_i),
+      .t_bus_idle_i(t_bus_idle_i),
+      .t_bus_available_i(t_bus_available_i),
+
+      .fmt_fifo_rvalid_i(fmt_fifo_rvalid),
+      .fmt_fifo_rready_o(fmt_fifo_rready),
+      .fmt_fifo_rdone_o(fmt_fifo_rdone),
+      .fmt_byte_i(fmt_byte),
+      .fmt_bit_i(fmt_bit),  // T bit
+      .fmt_receive_nack_o(fmt_receive_nack),
+      .fmt_sda_arbitration_o(fmt_sda_arbitration),
+      .fmt_flag_start_before_i(fmt_flag_start_before),
+      // fmt RX signals
+      .fmt_byte_o(fmt_rx_byte),
+      .fmt_bit_o(fmt_rx_bit),
+      .fmt_flag_read_valid_o(fmt_flag_read_valid),
+      .fmt_flag_restart_after_i(fmt_flag_restart_after),
+      .fmt_flag_read_continuous_i(fmt_flag_read_continuous),
+      .fmt_flag_stop_after_i(fmt_flag_stop_after),
+      .fmt_flag_read_bytes_i(fmt_flag_read_bytes),
+      .fmt_flag_hdr_exit_i(fmt_flag_hdr_exit)
   );
 
-  // TODO: Handle driver switching in the active controller mode
+  // FUTUREFIX: Handle driver switching in the active controller mode
   assign phy_sel_od_pp_o[0] = '0;
-  assign phy_sel_od_pp_o[1] = '0;
+  assign is_i2c_transfer_o  = is_i2c_transfer;
 endmodule

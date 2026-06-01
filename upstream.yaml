@@ -3,7 +3,7 @@ upstream:
   type: "standalone"
   repo: https://github.com/chipsalliance/i3c-core
   branch: main
-  commit: 694de2e1cbaab6ab75ff95bceb03ddb5b175d725
+  commit: a9a8ef9b7aa2fc610f0e16db36def5d2d69fabdd
 import:
   rtl:
     - path: "src"
@@ -15,5 +15,4 @@ import:
 license:
   spdx: Apache-2.0
   file: LICENSE
-
 metadata_locked: true

@@ -6,9 +6,139 @@ package i3c_pkg;
   `define I3C_RSVD_ADDR 7'h7E
   `define I3C_RSVD_BYTE 8'hFC
 
+  // ===========================================================================
+  // TE0 HDR Exit Condition: Invalid Reserved Address + RnW Combinations
+  // ===========================================================================
+  // Per I3C spec, these address+RnW combinations are invalid and trigger TE0:
+  //   7'h3E / W, 7'h5E / W, 7'h6E / W, 7'h76 / W,
+  //   7'h7A / W, 7'h7C / W, 7'h7F / W, 7'h7E / R
+  //
+  // Reserved addresses that are invalid with Write (RnW=0)
+  localparam logic [6:0] TE0_RSVD_ADDR_W[7] = '{
+      7'h3E,  // Reserved for Device Type Group Address
+      7'h5E,  // Reserved for Device Type Group Address
+      7'h6E,  // Reserved for Device Type Group Address
+      7'h76,  // Reserved for Device Type Group Address
+      7'h7A,  // Reserved for Device Type Group Address
+      7'h7C,  // Reserved for Device Type Group Address
+      7'h7F  // Reserved for Device Type Group Address
+  };
+
+  // Reserved address that is invalid with Read (RnW=1)
+  localparam logic [6:0] TE0_RSVD_ADDR_R = 7'h7E;  // I3C Broadcast Address
+
+  // Function to check if an address+RnW combination is a TE0 error
+  // Returns 1 if the combination is invalid per I3C spec
+  function automatic logic is_te0_rsvd_addr_err(input logic [6:0] addr, input logic rnw);
+    // Check for 7'h7E with Read
+    if (addr == TE0_RSVD_ADDR_R && rnw) begin
+      return 1'b1;
+    end
+    // Check for reserved addresses with Write
+    if (!rnw) begin
+      for (int i = 0; i < 7; i++) begin
+        if (addr == TE0_RSVD_ADDR_W[i]) begin
+          return 1'b1;
+        end
+      end
+    end
+    return 1'b0;
+  endfunction : is_te0_rsvd_addr_err
+
+  // ===========================================================================
+  // I3C Reserved Address Check for Dynamic Address Assignment
+  // ===========================================================================
+  // Per I3C spec Table 8, certain addresses cannot be assigned as Dynamic Addresses.
+  // This function returns 1 if the address is reserved and cannot be used.
+  // Reserved ranges:
+  //   7'h00-7'h07: Reserved for I3C broadcast and special purposes
+  //   7'h3E, 7'h5E, 7'h6E, 7'h76: Reserved for Device Type Group Address
+  //   7'h78-7'h7F: Reserved for I3C special addresses
+  function automatic logic is_i3c_rsvd_addr(input logic [6:0] addr);
+    return addr inside {[7'h00 : 7'h07], 7'h3E, 7'h5E, 7'h6E, 7'h76, [7'h78 : 7'h7F]};
+  endfunction : is_i3c_rsvd_addr
+
   localparam int unsigned RespErrIdWidth = 4;
   localparam int unsigned DatAw = $clog2(`DAT_DEPTH);
   localparam int unsigned DctAw = $clog2(`DCT_DEPTH);
+  localparam int unsigned TimingWidth = 20;
+
+  localparam int unsigned I3cDataWidth = 8;
+  localparam int unsigned I3cAddrWidth = 7;
+  localparam int unsigned I3cTimeParamWidth = 20;
+
+  typedef logic [I3cDataWidth-1:0] i3c_byte_t;
+  typedef logic [I3cAddrWidth-1:0] i3c_addr_t;
+  typedef logic [I3cTimeParamWidth-1:0] i3c_timeparam_t;
+
+  // CCC Command Code enum for better waveform visibility
+  typedef enum logic [7:0] {
+    // Broadcast Commands
+    CCC_BCAST_ENEC       = 8'h00,  // Enable Events Command
+    CCC_BCAST_DISEC      = 8'h01,  // Disable Events Command
+    CCC_BCAST_ENTAS0     = 8'h02,  // Enter Activity State 0
+    CCC_BCAST_ENTAS1     = 8'h03,  // Enter Activity State 1
+    CCC_BCAST_ENTAS2     = 8'h04,  // Enter Activity State 2
+    CCC_BCAST_ENTAS3     = 8'h05,  // Enter Activity State 3
+    CCC_BCAST_RSTDAA     = 8'h06,  // Reset Dynamic Address Assignment
+    CCC_BCAST_ENTDAA     = 8'h07,  // Enter Dynamic Address Assignment
+    CCC_BCAST_DEFTGTS    = 8'h08,  // Define List of Targets
+    CCC_BCAST_SETMWL     = 8'h09,  // Set Max Write Length
+    CCC_BCAST_SETMRL     = 8'h0A,  // Set Max Read Length
+    CCC_BCAST_ENTTM      = 8'h0B,  // Enter Test Mode
+    CCC_BCAST_SETBUSCON  = 8'h0C,  // Set Bus Context
+    CCC_BCAST_ENDXFER    = 8'h12,  // Data Transfer Ending Procedure Control
+    CCC_BCAST_ENTHDR0    = 8'h20,  // Enter HDR Mode 0
+    CCC_BCAST_ENTHDR1    = 8'h21,  // Enter HDR Mode 1
+    CCC_BCAST_ENTHDR2    = 8'h22,  // Enter HDR Mode 2
+    CCC_BCAST_ENTHDR3    = 8'h23,  // Enter HDR Mode 3
+    CCC_BCAST_ENTHDR4    = 8'h24,  // Enter HDR Mode 4
+    CCC_BCAST_ENTHDR5    = 8'h25,  // Enter HDR Mode 5
+    CCC_BCAST_ENTHDR6    = 8'h26,  // Enter HDR Mode 6
+    CCC_BCAST_ENTHDR7    = 8'h27,  // Enter HDR Mode 7
+    CCC_BCAST_SETXTIME   = 8'h28,  // Exchange Timing Information
+    CCC_BCAST_SETAASA    = 8'h29,  // Set All Addresses to Static Addresses
+    CCC_BCAST_RSTACT     = 8'h2A,  // Target Reset Action
+    CCC_BCAST_DEFGRPA    = 8'h2B,  // Define List of Group Address
+    CCC_BCAST_RSTGRPA    = 8'h2C,  // Reset Group Address
+    CCC_BCAST_MLANE      = 8'h2D,  // Multi-Lane Data Transfer Control
+    // Direct Commands
+    CCC_DIRECT_ENEC      = 8'h80,  // Enable Events Command
+    CCC_DIRECT_DISEC     = 8'h81,  // Disable Events Command
+    CCC_DIRECT_ENTAS0    = 8'h82,  // Enter Activity State 0
+    CCC_DIRECT_ENTAS1    = 8'h83,  // Enter Activity State 1
+    CCC_DIRECT_ENTAS2    = 8'h84,  // Enter Activity State 2
+    CCC_DIRECT_ENTAS3    = 8'h85,  // Enter Activity State 3
+    CCC_DIRECT_RSTDAA    = 8'h86,  // Direct Reset Dynamic Address Assignment
+    CCC_DIRECT_SETDASA   = 8'h87,  // Set Dynamic Address from Static Address
+    CCC_DIRECT_SETNEWDA  = 8'h88,  // Set New Dynamic Address
+    CCC_DIRECT_SETMWL    = 8'h89,  // Set Max Write Length
+    CCC_DIRECT_SETMRL    = 8'h8A,  // Set Max Read Length
+    CCC_DIRECT_GETMWL    = 8'h8B,  // Get Max Write Length
+    CCC_DIRECT_GETMRL    = 8'h8C,  // Get Max Read Length
+    CCC_DIRECT_GETPID    = 8'h8D,  // Get Provisioned ID
+    CCC_DIRECT_GETBCR    = 8'h8E,  // Get Bus Characteristics Register
+    CCC_DIRECT_GETDCR    = 8'h8F,  // Get Device Characteristics Register
+    CCC_DIRECT_GETSTATUS = 8'h90,  // Get Device Status
+    CCC_DIRECT_GETACCCR  = 8'h91,  // Get Accept Controller Role
+    CCC_DIRECT_ENDXFER   = 8'h92,  // Data Transfer Ending Procedure Control
+    CCC_DIRECT_SETBRGTGT = 8'h93,  // Set Bridge Targets
+    CCC_DIRECT_GETMXDS   = 8'h94,  // Get Max Data Speed
+    CCC_DIRECT_GETCAPS   = 8'h95,  // Get Optional Feature Capabilities
+    CCC_DIRECT_SETROUTE  = 8'h96,  // Set Route
+    CCC_DIRECT_D2DXFER   = 8'h97,  // Device to Device Tunneling Control
+    CCC_DIRECT_SETXTIME  = 8'h98,  // Set Exchange Timing Information
+    CCC_DIRECT_GETXTIME  = 8'h99,  // Get Exchange Timing Information
+    CCC_DIRECT_RSTACT    = 8'h9A,  // Target Reset Action
+    CCC_DIRECT_SETGRPA   = 8'h9B,  // Set Group Address
+    CCC_DIRECT_RSTGRPA   = 8'h9C,  // Reset Group Address
+    CCC_DIRECT_MLANE     = 8'h9D   // Multi-Lane Data Transfer Control
+  } ccc_cmd_e;
+
+  typedef enum logic {
+    OpenDrain = 1'b0,
+    PushPull  = 1'b1
+  } i3c_drive_e;
 
   // Bus signal state
   typedef struct packed {
@@ -27,6 +157,54 @@ package i3c_pkg;
     logic rstart_det;
     logic stop_det;
   } bus_state_t;
+
+  // Tx transfer types
+  typedef enum logic [2:0] {
+    RawByte,
+    RawBit,
+    InitIbi,
+    AckRegular,
+    AckHandoff,
+    AckIbi,
+    TReadCont,
+    TReadEnd
+  } i3c_tx_req_e;
+
+  // Tx descriptor
+  typedef struct packed {
+    logic        req_valid;
+    i3c_tx_req_e req_type;
+    i3c_drive_e  drive_type;
+    i3c_byte_t   data;
+  } bus_tx_req_t;
+
+  typedef struct packed {
+    logic error;
+    logic idle;
+    logic abort;
+    logic done;
+  } bus_tx_rsp_t;
+
+  // Rx descriptor
+  typedef struct packed {
+    logic req_byte;
+    logic req_bit;
+  } bus_rx_req_t;
+
+  typedef struct packed {
+    logic      idle;
+    logic      done;
+    i3c_byte_t data;
+  } bus_rx_rsp_t;
+
+  // IBI status codes
+  typedef enum logic [2:0] {
+    IbiSuccess            = 3'b000,
+    IbiFailureNack        = 3'b001,
+    IbiFailurePartialData = 3'b010,
+    IbiFailureRetry       = 3'b011,
+    IbiFailureAddressArb  = 3'b100
+  } ibi_status_e;
 
   // Memory port to DAT table
   typedef struct packed {
@@ -58,34 +236,38 @@ package i3c_pkg;
     logic [1:0]   rerror;
   } dct_mem_src_t;
 
-  // Response error status (See TCRI 7.1.3 Table 11 field ERR_STATUS)
+  // Response error status (See TCRI 6.4.1 Table 1)
   typedef enum logic [RespErrIdWidth-1:0] {
-    Success = 4'b0000,
-    Crc = 4'b0001,
-    Parity = 4'b0010,
-    Frame = 4'b0011,
-    AddrHeader = 4'b0100,
+    Success = 4'h0,
+    Crc = 4'h1,
+    Parity = 4'h2,
+    Frame = 4'h3,
+    AddrHeader = 4'h4,
     // Address was NACK'ed or Dynamic Address Assignment was NACK'ed
-    Nack = 4'b0101,
+    Nack = 4'h5,
     // Receive overflow or transfer underflow error
-    Ovl = 4'b0110,
+    Ovl = 4'h6,
     // Target returned fewer bytes than requested in DATA_LENGTH field
     // of a transfer command where short read was not permitted
-    I3cShortReadErr = 4'b0111,
+    I3cShortReadErr = 4'h7,
     // Terminated by host controller due to internal error or Abort operation
-    HcAborted = 4'b1000,
+    HcAborted = 4'h8,
     // Transfer terminated by due to bus action
     // * for I2C transfers: I2C_WR_DATA_NACK
     // * for I3C transfers: BUS_ABORTED
-    I2cDataNackOrI3cBusAborted = 4'b1001,
+    I2cDataNackOrI3cBusAborted = 4'h9,
     // Command not supported by the Host Controller implementation
-    NotSupported = 4'b1010,
-    Reserved = 4'b1011,
+    NotSupported = 4'hA,
+    // In HDR-BT Mode
+    // NOTE: This error status is used as a default error status. I.e. some
+    // internal bugs can also produce this error status (when no proper error
+    // status can be assigned due to a bug)
+    AbortedWithCRC = 4'hB,
     // Transfer Type Specific Errors
-    ErrorC = 4'b1100,
-    ErrorD = 4'b1101,
-    ErrorE = 4'b1110,
-    ErrorF = 4'b1111
+    ErrorC = 4'hC,
+    ErrorD = 4'hD,
+    ErrorE = 4'hE,
+    ErrorF = 4'hF
   } i3c_resp_err_status_e;
 
   // Response descriptor (See TCRI 7.1.3 Table 11)
@@ -95,6 +277,28 @@ package i3c_pkg;
     logic [7:0] __rsvd23_16;
     logic [15:0] data_length;
   } i3c_response_desc_t;
+
+  // IBI Status Type
+  typedef enum logic [2:0] {
+    RegularIBI = 3'b000,
+    CreditACK = 3'b001,
+    ScheduledCMD = 3'b010,
+    AutocmdRead = 3'b100,
+    StbyCRBcastCCC = 3'b111
+  } ibi_stat_e;
+
+  // IBI Status Descriptor (See Table 147 I3C HCI Spec)
+  typedef struct packed {
+    logic ibi_sts;
+    logic error;
+    ibi_stat_e status_type;
+    logic __rsvd26;
+    logic ts;
+    logic last_status;
+    logic [7:0] chunks;
+    logic [7:0] ibi_id;
+    logic [7:0] data_length;
+  } i3c_ibi_status_desc_t;
 
   typedef struct packed {
     logic [31:16] data_length;
@@ -107,13 +311,16 @@ package i3c_pkg;
     logic [14:0] __rsvd14_0;
   } i3c_tti_command_desc_t;
 
-  // Defined command types (See TCRI 7.1.2 Table 6)
+  // Defined command types (See TCRI Appendix A.2 Table 21)
   typedef enum logic [2:0] {
-    RegularTransfer = 3'b000,
-    ImmediateDataTransfer = 3'b001,
-    AddressAssignment = 3'b010,
-    ComboTransfer = 3'b011,
-    InternalControl = 3'b111
+    ImmediateDataTransferDAT = 3'h1,
+    ImmediateDataTransferDirect = 3'h5,
+    RegularTransferDAT = 3'h0,
+    RegularTransferDirect = 3'h4,
+    ComboTransferDAT = 3'h3,
+    ComboTransferDirect = 3'h6,
+    InternalControl = 3'h7,
+    AddressAssignment = 3'h2
   } i3c_cmd_attr_e;
 
   // Data transfer speed and mode (See TCRI 7.1.1.1)
@@ -154,9 +361,33 @@ package i3c_pkg;
     logic [7:0] cmd;  // CCC / HDR command code
     logic [3:0] tid;  // Transaction ID
     i3c_cmd_attr_e attr;
-  } immediate_data_trans_desc_t;
+  } immediate_data_trans_dat_desc_t;
 
-  // Regular transfer command descriptor (See TCRI 7.1.2.2)
+  // Immediate transfer command descriptor (See TCRI 7.2.2.1)
+  // Provides a short type of transfer, contains the data to be send in the descriptor
+  // itself (as opposed to via TX channel)
+  typedef struct packed {
+    // DWORD 1
+    logic [7:0] data_byte4;
+    logic [7:0] data_byte3;
+    logic [7:0] data_byte2;
+    logic [7:0] def_or_data_byte1;  // Direct argument or defining byte
+
+    // DWORD 0
+    logic toc;  // Terminate on completion
+    logic wroc;  // Response on completion
+    logic rnw;  // Direction; Immediate transfer is write-only
+    i3c_trans_mode_e mode;  // Mode and Speed
+    logic [2:0] dtt;  // Type and Byte Count
+    logic [6:0] dev_address;  // Device Address
+    logic cp;  // Command present
+    logic [7:0] cmd;  // CCC / HDR command code
+    logic i2c;  // Device Type
+    logic [2:0] tid;  // Transaction ID
+    i3c_cmd_attr_e attr;
+  } immediate_data_trans_direct_desc_t;
+
+  // Regular transfer command descriptor DAT (See TCRI 7.1.2.2)
   typedef struct packed {
     // DWORD 1
     logic [15:0] data_length;
@@ -176,8 +407,30 @@ package i3c_pkg;
     logic [7:0] cmd;  // CCC / HDR command code
     logic [3:0] tid;  // Transaction ID
     i3c_cmd_attr_e attr;
-  } regular_trans_desc_t;
+  } regular_trans_dat_desc_t;
 
+  // Regular transfer command descriptor direct (See TCRI 7.2.2.2)
+  typedef struct packed {
+    // DWORD 1
+    logic [15:0] data_length;
+    logic [7:0] __rsvd47_40;
+    logic [7:0] def_byte;  // Defining byte for present CCC; valid if dbp == 1'b1
+
+    // DWORD 0
+    logic toc;  // Terminate on completion
+    logic wroc;  // Response on completion
+    logic rnw;  // Direction transfer; Read if 1b'1 else write
+    i3c_trans_mode_e mode;
+    logic dbp;  // Defining byte for CCC present
+    logic sre;  // iff 0'b0 permits short reads
+    logic __rsvd23;
+    logic [6:0] dev_address;
+    logic cp;  // Command present
+    logic [7:0] cmd;  // CCC / HDR command code
+    logic i2c;  // Data Transfer Device Type
+    logic [2:0] tid;  // Transaction ID
+    i3c_cmd_attr_e attr;
+  } regular_trans_direct_desc_t;
   // Combo transfer command descriptor (See TCRI 7.1.2.3)
   typedef struct packed {
     // DWORD 1
@@ -258,5 +511,16 @@ package i3c_pkg;
     logic id_type_selector;
     target_dev_id_value_t vendor_random_value;
   } target_dev_provisioned_id_t;
+
+  // To raise global interrupts
+  typedef struct packed {
+    logic sched_cmd_missed_tick_stat;
+    logic hc_err_cmd_seq_timeout_stat;
+    logic hc_warn_cmd_seq_stall_stat;
+    logic hc_seq_cancel_stat;
+    logic hc_internal_err_stat;
+    logic pio_transfer_err_stat;
+    logic pio_transfer_abort_stat;
+  } i3c_irq_t;
 
 endpackage

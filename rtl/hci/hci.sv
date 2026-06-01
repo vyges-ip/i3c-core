@@ -63,9 +63,9 @@ module hci
     output logic [HciRespThldWidth-1:0] hci_resp_ready_thld_o,
     output logic hci_resp_ready_thld_trig_o,
     output logic hci_resp_empty_o,
-    input logic hci_resp_wvalid_i,
+    input  logic hci_resp_wvalid_i,
     output logic hci_resp_wready_o,
-    input logic [CsrDataWidth-1:0] hci_resp_wdata_i,
+    input  logic [CsrDataWidth-1:0] hci_resp_wdata_i,
 
     // Command queue
     output logic hci_cmd_full_o,
@@ -74,7 +74,7 @@ module hci
     output logic hci_cmd_ready_thld_trig_o,
     output logic hci_cmd_empty_o,
     output logic hci_cmd_rvalid_o,
-    input logic hci_cmd_rready_i,
+    input  logic hci_cmd_rready_i,
     output logic [HciCmdDataWidth-1:0] hci_cmd_rdata_o,
 
     // RX queue
@@ -85,9 +85,9 @@ module hci
     output logic hci_rx_start_thld_trig_o,
     output logic hci_rx_ready_thld_trig_o,
     output logic hci_rx_empty_o,
-    input logic hci_rx_wvalid_i,
+    input  logic hci_rx_wvalid_i,
     output logic hci_rx_wready_o,
-    input logic [CsrDataWidth-1:0] hci_rx_wdata_i,
+    input  logic [CsrDataWidth-1:0] hci_rx_wdata_i,
 
     // TX queue
     output logic hci_tx_full_o,
@@ -98,7 +98,7 @@ module hci
     output logic hci_tx_ready_thld_trig_o,
     output logic hci_tx_empty_o,
     output logic hci_tx_rvalid_o,
-    input logic hci_tx_rready_i,
+    input  logic hci_tx_rready_i,
     output logic [HciTxDataWidth-1:0] hci_tx_rdata_o,
 
     // In-band Interrupt queue
@@ -107,9 +107,9 @@ module hci
     output logic [HciIbiThldWidth-1:0] hci_ibi_ready_thld_o,
     output logic hci_ibi_ready_thld_trig_o,
     output logic hci_ibi_empty_o,
-    input logic hci_ibi_wvalid_i,
+    input  logic hci_ibi_wvalid_i,
     output logic hci_ibi_wready_o,
-    input logic [HciIbiDataWidth-1:0] hci_ibi_wdata_i,
+    input  logic [HciIbiDataWidth-1:0] hci_ibi_wdata_i,
 
     // PIO CONTROL CSR interface
     input  I3CCSR_pkg::I3CCSR__PIOControl__out_t hwif_pio_control_i,
@@ -127,16 +127,8 @@ module hci
     input  I3CCSR_pkg::I3CCSR__DCT__out_t dct_i,
     output I3CCSR_pkg::I3CCSR__DCT__in_t  dct_o,
 
-    input logic [6:0] set_dasa_i,
-    input logic       set_dasa_valid_i,
-    input logic       set_dasa_virtual_device_i,
-    input logic       rstdaa_i,
-    input logic [6:0] newda_i,
-    input logic       set_newda_i,
-    input logic       set_newda_virtual_device_i,
-
-    input logic [7:0] rst_action_i,
-    input logic rst_action_valid_i
+    // Error Interface from flow_active
+    input i3c_irq_t ctrl_int_stat_i
 );
 
   // Reset control
@@ -186,7 +178,7 @@ module hci
 
   always_ff @(posedge clk_i or negedge rst_ni) begin : blockName
     if (!rst_ni) begin
-      cmd_ready_thld_we <= '0;
+      cmd_ready_thld_we  <= '0;
       resp_ready_thld_we <= '0;
       cmd_ready_thld_swmod_q <= '0;
       resp_ready_thld_swmod_q <= '0;
@@ -205,10 +197,17 @@ module hci
     txrst = hwif_base_i.RESET_CONTROL.TX_FIFO_RST.value;
     resprst = hwif_base_i.RESET_CONTROL.RESP_QUEUE_RST.value;
 
-    hwif_base_o.RESET_CONTROL.CMD_QUEUE_RST.hwclr = cmd_reset_ctrl_we & !cmd_reset_ctrl_next;
-    hwif_base_o.RESET_CONTROL.RX_FIFO_RST.hwclr = rx_reset_ctrl_we & !rx_reset_ctrl_next;
-    hwif_base_o.RESET_CONTROL.TX_FIFO_RST.hwclr = tx_reset_ctrl_we & !tx_reset_ctrl_next;
-    hwif_base_o.RESET_CONTROL.RESP_QUEUE_RST.hwclr = resp_reset_ctrl_we & !resp_reset_ctrl_next;
+    hwif_base_o.RESET_CONTROL.CMD_QUEUE_RST.we = cmd_reset_ctrl_we;
+    hwif_base_o.RESET_CONTROL.CMD_QUEUE_RST.next = cmd_reset_ctrl_next;
+
+    hwif_base_o.RESET_CONTROL.RX_FIFO_RST.we = rx_reset_ctrl_we;
+    hwif_base_o.RESET_CONTROL.RX_FIFO_RST.next = rx_reset_ctrl_next;
+
+    hwif_base_o.RESET_CONTROL.TX_FIFO_RST.we = tx_reset_ctrl_we;
+    hwif_base_o.RESET_CONTROL.TX_FIFO_RST.next = tx_reset_ctrl_next;
+
+    hwif_base_o.RESET_CONTROL.RESP_QUEUE_RST.we = resp_reset_ctrl_we;
+    hwif_base_o.RESET_CONTROL.RESP_QUEUE_RST.next = resp_reset_ctrl_next;
 
     // Threshold
     hwif_pio_control_o.QUEUE_THLD_CTRL.CMD_EMPTY_BUF_THLD.we = cmd_ready_thld_we;
@@ -375,6 +374,8 @@ module hci
       .tx_reg_rst_data_o(tx_reset_ctrl_next)
   );
 
+
+
   // In-band Interrupt queue
   logic hci_ibi_rst;
   logic hci_ibi_rst_we;
@@ -386,8 +387,9 @@ module hci
   logic [HciIbiDataWidth-1:0] hci_ibi_rd_data;
 
   always_comb begin
-    hci_ibi_rst = hwif_out_o.I3CBase.RESET_CONTROL.IBI_QUEUE_RST.value;
-    hwif_base_o.RESET_CONTROL.IBI_QUEUE_RST.hwclr = hci_ibi_rst_we & !hci_ibi_rst_next;
+    hci_ibi_rst = hwif_base_i.RESET_CONTROL.IBI_QUEUE_RST.value;
+    hwif_base_o.RESET_CONTROL.IBI_QUEUE_RST.we = hci_ibi_rst_we;
+    hwif_base_o.RESET_CONTROL.IBI_QUEUE_RST.next = hci_ibi_rst_next;
 
     hci_ibi_thld = hwif_pio_control_i.QUEUE_THLD_CTRL.IBI_STATUS_THLD.value;
 
@@ -428,36 +430,71 @@ module hci
       .reg_rst_data_o(hci_ibi_rst_next)
   );
 
-  always_comb begin : wire_unconnected_regs
+  always_comb begin : wire_controller_regs
     hwif_base_o.CONTROLLER_DEVICE_ADDR.DYNAMIC_ADDR_VALID.we = '0;
     hwif_base_o.CONTROLLER_DEVICE_ADDR.DYNAMIC_ADDR.we = '0;
     hwif_base_o.CONTROLLER_DEVICE_ADDR.DYNAMIC_ADDR_VALID.next = '0;
     hwif_base_o.CONTROLLER_DEVICE_ADDR.DYNAMIC_ADDR.next = '0;
-    hwif_base_o.HC_CONTROL.RESUME.we = '0;
-    hwif_base_o.HC_CONTROL.RESUME.next = '0;
+    hwif_base_o.HC_CONTROL.RESUME.we = ctrl_int_stat_i.pio_transfer_err_stat;
+    hwif_base_o.HC_CONTROL.RESUME.next = ctrl_int_stat_i.pio_transfer_err_stat;
     hwif_base_o.HC_CONTROL.BUS_ENABLE.we = '0;
     hwif_base_o.HC_CONTROL.BUS_ENABLE.next = '0;
-    hwif_base_o.RESET_CONTROL.SOFT_RST.we = '0;
-    hwif_base_o.RESET_CONTROL.SOFT_RST.next = '0;
-    hwif_base_o.PRESENT_STATE.AC_CURRENT_OWN.next = '0;
-    hwif_base_o.INTR_STATUS.HC_INTERNAL_ERR_STAT.next = '0;
-    hwif_base_o.INTR_STATUS.HC_SEQ_CANCEL_STAT.next = '0;
-    hwif_base_o.INTR_STATUS.HC_WARN_CMD_SEQ_STALL_STAT.next = '0;
-    hwif_base_o.INTR_STATUS.HC_ERR_CMD_SEQ_TIMEOUT_STAT.next = '0;
-    hwif_base_o.INTR_STATUS.SCHED_CMD_MISSED_TICK_STAT.next = '0;
+    hwif_base_o.RESET_CONTROL.SOFT_RST = '0;
+    hwif_base_o.PRESENT_STATE.AC_CURRENT_OWN.next = 1'b1; // TODO: change this based on if we are the active controller or not
+
+    // Global I3C Interrupts: (HW Event | SW Force) & Status Enable Mask
+    hwif_base_o.INTR_STATUS.HC_INTERNAL_ERR_STAT.next = 
+        (ctrl_int_stat_i.hc_internal_err_stat | hwif_base_i.INTR_FORCE.HC_INTERNAL_ERR_FORCE.value) 
+        & hwif_base_i.INTR_STATUS_ENABLE.HC_INTERNAL_ERR_STAT_EN.value;
+
+    hwif_base_o.INTR_STATUS.HC_SEQ_CANCEL_STAT.next = 
+        (ctrl_int_stat_i.hc_seq_cancel_stat | hwif_base_i.INTR_FORCE.HC_SEQ_CANCEL_FORCE.value) 
+        & hwif_base_i.INTR_STATUS_ENABLE.HC_SEQ_CANCEL_STAT_EN.value;
+
+    hwif_base_o.INTR_STATUS.HC_WARN_CMD_SEQ_STALL_STAT.next = 
+        (ctrl_int_stat_i.hc_warn_cmd_seq_stall_stat | hwif_base_i.INTR_FORCE.HC_WARN_CMD_SEQ_STALL_FORCE.value) 
+        & hwif_base_i.INTR_STATUS_ENABLE.HC_WARN_CMD_SEQ_STALL_STAT_EN.value;
+
+    hwif_base_o.INTR_STATUS.HC_ERR_CMD_SEQ_TIMEOUT_STAT.next = 
+        (ctrl_int_stat_i.hc_err_cmd_seq_timeout_stat | hwif_base_i.INTR_FORCE.HC_ERR_CMD_SEQ_TIMEOUT_FORCE.value) 
+        & hwif_base_i.INTR_STATUS_ENABLE.HC_ERR_CMD_SEQ_TIMEOUT_STAT_EN.value;
+
+    hwif_base_o.INTR_STATUS.SCHED_CMD_MISSED_TICK_STAT.next = 
+        (ctrl_int_stat_i.sched_cmd_missed_tick_stat | hwif_base_i.INTR_FORCE.SCHED_CMD_MISSED_TICK_FORCE.value) 
+        & hwif_base_i.INTR_STATUS_ENABLE.SCHED_CMD_MISSED_TICK_STAT_EN.value;
+
     hwif_base_o.DCT_SECTION_OFFSET.TABLE_INDEX.we = '0;
     hwif_base_o.DCT_SECTION_OFFSET.TABLE_INDEX.next = '0;
     hwif_base_o.IBI_DATA_ABORT_CTRL.IBI_DATA_ABORT_MON.we = '0;
-    hwif_base_o.IBI_DATA_ABORT_CTRL.IBI_DATA_ABORT_MON.next = '0;
+    hwif_base_o.IBI_DATA_ABORT_CTRL.IBI_DATA_ABORT_MON.next = '0;  // This feature is not supported
 
-    hwif_pio_control_o.PIO_INTR_STATUS.TX_THLD_STAT.next = '0;
-    hwif_pio_control_o.PIO_INTR_STATUS.RX_THLD_STAT.next = '0;
-    hwif_pio_control_o.PIO_INTR_STATUS.IBI_STATUS_THLD_STAT.next = '0;
-    hwif_pio_control_o.PIO_INTR_STATUS.CMD_QUEUE_READY_STAT.next = '0;
-    hwif_pio_control_o.PIO_INTR_STATUS.RESP_READY_STAT.next = '0;
-    hwif_pio_control_o.PIO_INTR_STATUS.TRANSFER_ABORT_STAT.next = '0;
-    hwif_pio_control_o.PIO_INTR_STATUS.TRANSFER_ERR_STAT.next = '0;
+    // The I3CCSR internally masks the respective interrupts using the
+    // PIO_INTR_STATUS_ENABLE register fields, so we just OR the force bits.
+
+    hwif_pio_control_o.PIO_INTR_STATUS.TX_THLD_STAT.next = 
+        hci_tx_ready_thld_trig_o | hwif_pio_control_i.PIO_INTR_FORCE.TX_THLD_FORCE.value;
+
+    hwif_pio_control_o.PIO_INTR_STATUS.RX_THLD_STAT.next = 
+        hci_rx_ready_thld_trig_o | hwif_pio_control_i.PIO_INTR_FORCE.RX_THLD_FORCE.value;
+
+    hwif_pio_control_o.PIO_INTR_STATUS.IBI_STATUS_THLD_STAT.next = 
+        hci_ibi_ready_thld_trig_o | hwif_pio_control_i.PIO_INTR_FORCE.IBI_THLD_FORCE.value;
+
+    hwif_pio_control_o.PIO_INTR_STATUS.CMD_QUEUE_READY_STAT.next = 
+        hci_cmd_ready_thld_trig_o | hwif_pio_control_i.PIO_INTR_FORCE.CMD_QUEUE_READY_FORCE.value;
+
+    hwif_pio_control_o.PIO_INTR_STATUS.RESP_READY_STAT.next = 
+        hci_resp_ready_thld_trig_o | hwif_pio_control_i.PIO_INTR_FORCE.RESP_READY_FORCE.value;
+
+    // Must be manually masked with STATUS_ENABLE
+    hwif_pio_control_o.PIO_INTR_STATUS.TRANSFER_ABORT_STAT.next = 
+        (ctrl_int_stat_i.pio_transfer_abort_stat | hwif_pio_control_i.PIO_INTR_FORCE.TRANSFER_ABORT_FORCE.value) 
+        & hwif_pio_control_i.PIO_INTR_STATUS_ENABLE.TRANSFER_ABORT_STAT_EN.value;
+
+    hwif_pio_control_o.PIO_INTR_STATUS.TRANSFER_ERR_STAT.next = 
+        (ctrl_int_stat_i.pio_transfer_err_stat | hwif_pio_control_i.PIO_INTR_FORCE.TRANSFER_ERR_FORCE.value) 
+        & hwif_pio_control_i.PIO_INTR_STATUS_ENABLE.TRANSFER_ERR_STAT_EN.value;
   end
 
 endmodule : hci
-`endif // CONTROLLER_SUPPORT
+`endif  // CONTROLLER_SUPPORT

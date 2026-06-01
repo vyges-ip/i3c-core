@@ -42,12 +42,8 @@ ${I3C_ROOT_DIR}/src/ctrl/width_converter_8toN.sv
 ${I3C_ROOT_DIR}/src/ctrl/width_converter_Nto8.sv
 ${I3C_ROOT_DIR}/src/recovery/recovery_pec.sv
 ${I3C_ROOT_DIR}/src/recovery/recovery_receiver.sv
-${I3C_ROOT_DIR}/src/recovery/recovery_transmitter.sv
-${I3C_ROOT_DIR}/src/recovery/recovery_executor.sv
 ${I3C_ROOT_DIR}/src/recovery/recovery_handler.sv
 ${I3C_ROOT_DIR}/src/ctrl/bus_monitor.sv
-${I3C_ROOT_DIR}/src/ctrl/ibi.sv
-${I3C_ROOT_DIR}/src/ctrl/bus_tx.sv
 ${I3C_ROOT_DIR}/src/ctrl/bus_tx_flow.sv
 ${I3C_ROOT_DIR}/src/ctrl/bus_rx_flow.sv
 ${I3C_ROOT_DIR}/src/ctrl/bus_timers.sv

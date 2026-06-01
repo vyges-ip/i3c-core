@@ -1039,8 +1039,8 @@
 
     endgroup
 
-    /*----------------------- I3CCSR__I3C_EC__STDBYCTRLMODE____RSVD_3 COVERGROUPS -----------------------*/
-    covergroup I3CCSR__I3C_EC__StdbyCtrlMode____rsvd_3_bit_cg with function sample(input bit reg_bit);
+    /*----------------------- I3CCSR__I3C_EC__STDBYCTRLMODE__STBY_CR_MWL COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__StdbyCtrlMode__STBY_CR_MWL_bit_cg with function sample(input bit reg_bit);
         option.per_instance = 1;
         reg_bit_cp : coverpoint reg_bit {
             bins value[2] = {0,1};
@@ -1051,11 +1051,33 @@
         }
 
     endgroup
-    covergroup I3CCSR__I3C_EC__StdbyCtrlMode____rsvd_3_fld_cg with function sample(
-    input bit [32-1:0] __rsvd
+    covergroup I3CCSR__I3C_EC__StdbyCtrlMode__STBY_CR_MWL_fld_cg with function sample(
+    input bit [16-1:0] MWL
     );
         option.per_instance = 1;
-        __rsvd_cp : coverpoint __rsvd;
+        MWL_cp : coverpoint MWL;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__STDBYCTRLMODE__STBY_CR_MRL COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__StdbyCtrlMode__STBY_CR_MRL_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__StdbyCtrlMode__STBY_CR_MRL_fld_cg with function sample(
+    input bit [16-1:0] MRL,
+    input bit [8-1:0] IBIL
+    );
+        option.per_instance = 1;
+        MRL_cp : coverpoint MRL;
+        IBIL_cp : coverpoint IBIL;
 
     endgroup
 
@@ -1121,7 +1143,7 @@
     endgroup
     covergroup I3CCSR__I3C_EC__TTI__STATUS_fld_cg with function sample(
     input bit [1-1:0] PROTOCOL_ERROR,
-    input bit [2-1:0] LAST_IBI_STATUS
+    input bit [3-1:0] LAST_IBI_STATUS
     );
         option.per_instance = 1;
         PROTOCOL_ERROR_cp : coverpoint PROTOCOL_ERROR;
@@ -1147,7 +1169,8 @@
     input bit [1-1:0] RX_DESC_RST,
     input bit [1-1:0] TX_DATA_RST,
     input bit [1-1:0] RX_DATA_RST,
-    input bit [1-1:0] IBI_QUEUE_RST
+    input bit [1-1:0] IBI_QUEUE_RST,
+    input bit [1-1:0] IBI_RETRY_CTR_RST
     );
         option.per_instance = 1;
         SOFT_RST_cp : coverpoint SOFT_RST;
@@ -1156,6 +1179,109 @@
         TX_DATA_RST_cp : coverpoint TX_DATA_RST;
         RX_DATA_RST_cp : coverpoint RX_DATA_RST;
         IBI_QUEUE_RST_cp : coverpoint IBI_QUEUE_RST;
+        IBI_RETRY_CTR_RST_cp : coverpoint IBI_RETRY_CTR_RST;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__QUEUE_STATUS COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__QUEUE_STATUS_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__QUEUE_STATUS_fld_cg with function sample(
+    input bit [1-1:0] RX_DESC_QUEUE_FULL,
+    input bit [1-1:0] RX_DESC_QUEUE_EMPTY,
+    input bit [1-1:0] TX_DESC_QUEUE_FULL,
+    input bit [1-1:0] TX_DESC_QUEUE_EMPTY,
+    input bit [1-1:0] RX_DATA_QUEUE_FULL,
+    input bit [1-1:0] RX_DATA_QUEUE_EMPTY,
+    input bit [1-1:0] TX_DATA_QUEUE_FULL,
+    input bit [1-1:0] TX_DATA_QUEUE_EMPTY,
+    input bit [1-1:0] IBI_QUEUE_FULL,
+    input bit [1-1:0] IBI_QUEUE_EMPTY
+    );
+        option.per_instance = 1;
+        RX_DESC_QUEUE_FULL_cp : coverpoint RX_DESC_QUEUE_FULL;
+        RX_DESC_QUEUE_EMPTY_cp : coverpoint RX_DESC_QUEUE_EMPTY;
+        TX_DESC_QUEUE_FULL_cp : coverpoint TX_DESC_QUEUE_FULL;
+        TX_DESC_QUEUE_EMPTY_cp : coverpoint TX_DESC_QUEUE_EMPTY;
+        RX_DATA_QUEUE_FULL_cp : coverpoint RX_DATA_QUEUE_FULL;
+        RX_DATA_QUEUE_EMPTY_cp : coverpoint RX_DATA_QUEUE_EMPTY;
+        TX_DATA_QUEUE_FULL_cp : coverpoint TX_DATA_QUEUE_FULL;
+        TX_DATA_QUEUE_EMPTY_cp : coverpoint TX_DATA_QUEUE_EMPTY;
+        IBI_QUEUE_FULL_cp : coverpoint IBI_QUEUE_FULL;
+        IBI_QUEUE_EMPTY_cp : coverpoint IBI_QUEUE_EMPTY;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__DESC_QUEUE_DEPTH COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__DESC_QUEUE_DEPTH_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__DESC_QUEUE_DEPTH_fld_cg with function sample(
+    input bit [8-1:0] RX_DESC_QUEUE_DEPTH,
+    input bit [8-1:0] TX_DESC_QUEUE_DEPTH
+    );
+        option.per_instance = 1;
+        RX_DESC_QUEUE_DEPTH_cp : coverpoint RX_DESC_QUEUE_DEPTH;
+        TX_DESC_QUEUE_DEPTH_cp : coverpoint TX_DESC_QUEUE_DEPTH;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__DATA_QUEUE_DEPTH COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__DATA_QUEUE_DEPTH_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__DATA_QUEUE_DEPTH_fld_cg with function sample(
+    input bit [8-1:0] RX_DATA_QUEUE_DEPTH,
+    input bit [8-1:0] TX_DATA_QUEUE_DEPTH
+    );
+        option.per_instance = 1;
+        RX_DATA_QUEUE_DEPTH_cp : coverpoint RX_DATA_QUEUE_DEPTH;
+        TX_DATA_QUEUE_DEPTH_cp : coverpoint TX_DATA_QUEUE_DEPTH;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__IBI_QUEUE_DEPTH COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__IBI_QUEUE_DEPTH_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__IBI_QUEUE_DEPTH_fld_cg with function sample(
+    input bit [8-1:0] IBI_QUEUE_DEPTH
+    );
+        option.per_instance = 1;
+        IBI_QUEUE_DEPTH_cp : coverpoint IBI_QUEUE_DEPTH;
 
     endgroup
 
@@ -1183,6 +1309,7 @@
     input bit [1-1:0] IBI_THLD_STAT,
     input bit [1-1:0] IBI_DONE,
     input bit [4-1:0] PENDING_INTERRUPT,
+    input bit [1-1:0] PENDING_IBI,
     input bit [1-1:0] TRANSFER_ABORT_STAT,
     input bit [1-1:0] TX_DESC_COMPLETE,
     input bit [1-1:0] TRANSFER_ERR_STAT
@@ -1199,6 +1326,7 @@
         IBI_THLD_STAT_cp : coverpoint IBI_THLD_STAT;
         IBI_DONE_cp : coverpoint IBI_DONE;
         PENDING_INTERRUPT_cp : coverpoint PENDING_INTERRUPT;
+        PENDING_IBI_cp : coverpoint PENDING_IBI;
         TRANSFER_ABORT_STAT_cp : coverpoint TRANSFER_ABORT_STAT;
         TX_DESC_COMPLETE_cp : coverpoint TX_DESC_COMPLETE;
         TRANSFER_ERR_STAT_cp : coverpoint TRANSFER_ERR_STAT;
@@ -1290,6 +1418,442 @@
         TRANSFER_ABORT_STAT_FORCE_cp : coverpoint TRANSFER_ABORT_STAT_FORCE;
         TX_DESC_COMPLETE_FORCE_cp : coverpoint TX_DESC_COMPLETE_FORCE;
         TRANSFER_ERR_STAT_FORCE_cp : coverpoint TRANSFER_ERR_STAT_FORCE;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CTRL COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CTRL_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CTRL_fld_cg with function sample(
+    input bit [1-1:0] TE0_ERR_DET_EN,
+    input bit [1-1:0] TE1_ERR_DET_EN,
+    input bit [1-1:0] TE2_ERR_DET_EN,
+    input bit [1-1:0] TE3_ERR_DET_EN,
+    input bit [1-1:0] TE4_ERR_DET_EN,
+    input bit [1-1:0] TE5_ERR_DET_EN,
+    input bit [1-1:0] FRAMING_ERR_DET_EN,
+    input bit [1-1:0] RI_PEC_ERR_DET_EN,
+    input bit [1-1:0] RI_LENGTH_ERR_DET_EN,
+    input bit [1-1:0] RI_READONLY_ERR_DET_EN,
+    input bit [1-1:0] RI_UNSUPPORTED_ERR_DET_EN,
+    input bit [1-1:0] RI_RX_FIFO_OVERFLOW_ERR_DET_EN,
+    input bit [1-1:0] RI_INDIRECT_FIFO_OVERFLOW_ERR_DET_EN
+    );
+        option.per_instance = 1;
+        TE0_ERR_DET_EN_cp : coverpoint TE0_ERR_DET_EN;
+        TE1_ERR_DET_EN_cp : coverpoint TE1_ERR_DET_EN;
+        TE2_ERR_DET_EN_cp : coverpoint TE2_ERR_DET_EN;
+        TE3_ERR_DET_EN_cp : coverpoint TE3_ERR_DET_EN;
+        TE4_ERR_DET_EN_cp : coverpoint TE4_ERR_DET_EN;
+        TE5_ERR_DET_EN_cp : coverpoint TE5_ERR_DET_EN;
+        FRAMING_ERR_DET_EN_cp : coverpoint FRAMING_ERR_DET_EN;
+        RI_PEC_ERR_DET_EN_cp : coverpoint RI_PEC_ERR_DET_EN;
+        RI_LENGTH_ERR_DET_EN_cp : coverpoint RI_LENGTH_ERR_DET_EN;
+        RI_READONLY_ERR_DET_EN_cp : coverpoint RI_READONLY_ERR_DET_EN;
+        RI_UNSUPPORTED_ERR_DET_EN_cp : coverpoint RI_UNSUPPORTED_ERR_DET_EN;
+        RI_RX_FIFO_OVERFLOW_ERR_DET_EN_cp : coverpoint RI_RX_FIFO_OVERFLOW_ERR_DET_EN;
+        RI_INDIRECT_FIFO_OVERFLOW_ERR_DET_EN_cp : coverpoint RI_INDIRECT_FIFO_OVERFLOW_ERR_DET_EN;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_INTR_STATUS COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_INTR_STATUS_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_INTR_STATUS_fld_cg with function sample(
+    input bit [1-1:0] TE0_ERR_STAT,
+    input bit [1-1:0] TE1_ERR_STAT,
+    input bit [1-1:0] TE2_ERR_STAT,
+    input bit [1-1:0] TE3_ERR_STAT,
+    input bit [1-1:0] TE4_ERR_STAT,
+    input bit [1-1:0] TE5_ERR_STAT,
+    input bit [1-1:0] FRAMING_ERR_STAT,
+    input bit [1-1:0] RI_PEC_ERR_STAT,
+    input bit [1-1:0] RI_LENGTH_ERR_STAT,
+    input bit [1-1:0] RI_READONLY_ERR_STAT,
+    input bit [1-1:0] RI_UNSUPPORTED_ERR_STAT,
+    input bit [1-1:0] RI_RX_FIFO_OVERFLOW_ERR_STAT,
+    input bit [1-1:0] RI_INDIRECT_FIFO_OVERFLOW_ERR_STAT
+    );
+        option.per_instance = 1;
+        TE0_ERR_STAT_cp : coverpoint TE0_ERR_STAT;
+        TE1_ERR_STAT_cp : coverpoint TE1_ERR_STAT;
+        TE2_ERR_STAT_cp : coverpoint TE2_ERR_STAT;
+        TE3_ERR_STAT_cp : coverpoint TE3_ERR_STAT;
+        TE4_ERR_STAT_cp : coverpoint TE4_ERR_STAT;
+        TE5_ERR_STAT_cp : coverpoint TE5_ERR_STAT;
+        FRAMING_ERR_STAT_cp : coverpoint FRAMING_ERR_STAT;
+        RI_PEC_ERR_STAT_cp : coverpoint RI_PEC_ERR_STAT;
+        RI_LENGTH_ERR_STAT_cp : coverpoint RI_LENGTH_ERR_STAT;
+        RI_READONLY_ERR_STAT_cp : coverpoint RI_READONLY_ERR_STAT;
+        RI_UNSUPPORTED_ERR_STAT_cp : coverpoint RI_UNSUPPORTED_ERR_STAT;
+        RI_RX_FIFO_OVERFLOW_ERR_STAT_cp : coverpoint RI_RX_FIFO_OVERFLOW_ERR_STAT;
+        RI_INDIRECT_FIFO_OVERFLOW_ERR_STAT_cp : coverpoint RI_INDIRECT_FIFO_OVERFLOW_ERR_STAT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_INTR_ENABLE COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_INTR_ENABLE_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_INTR_ENABLE_fld_cg with function sample(
+    input bit [1-1:0] TE0_ERR_EN,
+    input bit [1-1:0] TE1_ERR_EN,
+    input bit [1-1:0] TE2_ERR_EN,
+    input bit [1-1:0] TE3_ERR_EN,
+    input bit [1-1:0] TE4_ERR_EN,
+    input bit [1-1:0] TE5_ERR_EN,
+    input bit [1-1:0] FRAMING_ERR_EN,
+    input bit [1-1:0] RI_PEC_ERR_EN,
+    input bit [1-1:0] RI_LENGTH_ERR_EN,
+    input bit [1-1:0] RI_READONLY_ERR_EN,
+    input bit [1-1:0] RI_UNSUPPORTED_ERR_EN,
+    input bit [1-1:0] RI_RX_FIFO_OVERFLOW_ERR_EN,
+    input bit [1-1:0] RI_INDIRECT_FIFO_OVERFLOW_ERR_EN
+    );
+        option.per_instance = 1;
+        TE0_ERR_EN_cp : coverpoint TE0_ERR_EN;
+        TE1_ERR_EN_cp : coverpoint TE1_ERR_EN;
+        TE2_ERR_EN_cp : coverpoint TE2_ERR_EN;
+        TE3_ERR_EN_cp : coverpoint TE3_ERR_EN;
+        TE4_ERR_EN_cp : coverpoint TE4_ERR_EN;
+        TE5_ERR_EN_cp : coverpoint TE5_ERR_EN;
+        FRAMING_ERR_EN_cp : coverpoint FRAMING_ERR_EN;
+        RI_PEC_ERR_EN_cp : coverpoint RI_PEC_ERR_EN;
+        RI_LENGTH_ERR_EN_cp : coverpoint RI_LENGTH_ERR_EN;
+        RI_READONLY_ERR_EN_cp : coverpoint RI_READONLY_ERR_EN;
+        RI_UNSUPPORTED_ERR_EN_cp : coverpoint RI_UNSUPPORTED_ERR_EN;
+        RI_RX_FIFO_OVERFLOW_ERR_EN_cp : coverpoint RI_RX_FIFO_OVERFLOW_ERR_EN;
+        RI_INDIRECT_FIFO_OVERFLOW_ERR_EN_cp : coverpoint RI_INDIRECT_FIFO_OVERFLOW_ERR_EN;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_INTR_FORCE COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_INTR_FORCE_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_INTR_FORCE_fld_cg with function sample(
+    input bit [1-1:0] TE0_ERR_FORCE,
+    input bit [1-1:0] TE1_ERR_FORCE,
+    input bit [1-1:0] TE2_ERR_FORCE,
+    input bit [1-1:0] TE3_ERR_FORCE,
+    input bit [1-1:0] TE4_ERR_FORCE,
+    input bit [1-1:0] TE5_ERR_FORCE,
+    input bit [1-1:0] FRAMING_ERR_FORCE,
+    input bit [1-1:0] RI_PEC_ERR_FORCE,
+    input bit [1-1:0] RI_LENGTH_ERR_FORCE,
+    input bit [1-1:0] RI_READONLY_ERR_FORCE,
+    input bit [1-1:0] RI_UNSUPPORTED_ERR_FORCE,
+    input bit [1-1:0] RI_RX_FIFO_OVERFLOW_ERR_FORCE,
+    input bit [1-1:0] RI_INDIRECT_FIFO_OVERFLOW_ERR_FORCE
+    );
+        option.per_instance = 1;
+        TE0_ERR_FORCE_cp : coverpoint TE0_ERR_FORCE;
+        TE1_ERR_FORCE_cp : coverpoint TE1_ERR_FORCE;
+        TE2_ERR_FORCE_cp : coverpoint TE2_ERR_FORCE;
+        TE3_ERR_FORCE_cp : coverpoint TE3_ERR_FORCE;
+        TE4_ERR_FORCE_cp : coverpoint TE4_ERR_FORCE;
+        TE5_ERR_FORCE_cp : coverpoint TE5_ERR_FORCE;
+        FRAMING_ERR_FORCE_cp : coverpoint FRAMING_ERR_FORCE;
+        RI_PEC_ERR_FORCE_cp : coverpoint RI_PEC_ERR_FORCE;
+        RI_LENGTH_ERR_FORCE_cp : coverpoint RI_LENGTH_ERR_FORCE;
+        RI_READONLY_ERR_FORCE_cp : coverpoint RI_READONLY_ERR_FORCE;
+        RI_UNSUPPORTED_ERR_FORCE_cp : coverpoint RI_UNSUPPORTED_ERR_FORCE;
+        RI_RX_FIFO_OVERFLOW_ERR_FORCE_cp : coverpoint RI_RX_FIFO_OVERFLOW_ERR_FORCE;
+        RI_INDIRECT_FIFO_OVERFLOW_ERR_FORCE_cp : coverpoint RI_INDIRECT_FIFO_OVERFLOW_ERR_FORCE;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE0 COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE0_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE0_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE1 COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE1_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE1_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE2 COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE2_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE2_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE3 COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE3_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE3_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE4 COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE4_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE4_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE5 COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE5_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_TE5_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_FRAMING COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_FRAMING_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_FRAMING_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_PEC COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_PEC_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_PEC_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_LENGTH COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_LENGTH_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_LENGTH_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_READONLY COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_READONLY_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_READONLY_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_UNSUPPORTED COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_UNSUPPORTED_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_UNSUPPORTED_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_RX_FIFO_OVERFLOW COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_RX_FIFO_OVERFLOW_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_RX_FIFO_OVERFLOW_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_INDIRECT_FIFO_OVERFLOW COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_INDIRECT_FIFO_OVERFLOW_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__TTI__TARGET_ERR_CNT_RI_INDIRECT_FIFO_OVERFLOW_fld_cg with function sample(
+    input bit [8-1:0] CNT
+    );
+        option.per_instance = 1;
+        CNT_cp : coverpoint CNT;
 
     endgroup
 
@@ -1795,6 +2359,26 @@
 
     endgroup
 
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_SU_DAT_I2C_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_SU_DAT_I2C_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_SU_DAT_I2C_REG_fld_cg with function sample(
+    input bit [20-1:0] T_SU_DAT_I2C
+    );
+        option.per_instance = 1;
+        T_SU_DAT_I2C_cp : coverpoint T_SU_DAT_I2C;
+
+    endgroup
+
     /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_HD_DAT_REG COVERGROUPS -----------------------*/
     covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HD_DAT_REG_bit_cg with function sample(input bit reg_bit);
         option.per_instance = 1;
@@ -1835,6 +2419,66 @@
 
     endgroup
 
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_HIGH_OD_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HIGH_OD_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HIGH_OD_REG_fld_cg with function sample(
+    input bit [20-1:0] T_HIGH_OD
+    );
+        option.per_instance = 1;
+        T_HIGH_OD_cp : coverpoint T_HIGH_OD;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_HIGH_INIT_OD_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HIGH_INIT_OD_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HIGH_INIT_OD_REG_fld_cg with function sample(
+    input bit [20-1:0] T_HIGH_INIT_OD
+    );
+        option.per_instance = 1;
+        T_HIGH_INIT_OD_cp : coverpoint T_HIGH_INIT_OD;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_HIGH_I2C_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HIGH_I2C_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HIGH_I2C_REG_fld_cg with function sample(
+    input bit [20-1:0] T_HIGH_I2C
+    );
+        option.per_instance = 1;
+        T_HIGH_I2C_cp : coverpoint T_HIGH_I2C;
+
+    endgroup
+
     /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_LOW_REG COVERGROUPS -----------------------*/
     covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_LOW_REG_bit_cg with function sample(input bit reg_bit);
         option.per_instance = 1;
@@ -1852,6 +2496,46 @@
     );
         option.per_instance = 1;
         T_LOW_cp : coverpoint T_LOW;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_LOW_OD_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_LOW_OD_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_LOW_OD_REG_fld_cg with function sample(
+    input bit [20-1:0] T_LOW_OD
+    );
+        option.per_instance = 1;
+        T_LOW_OD_cp : coverpoint T_LOW_OD;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_LOW_I2C_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_LOW_I2C_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_LOW_I2C_REG_fld_cg with function sample(
+    input bit [20-1:0] T_LOW_I2C
+    );
+        option.per_instance = 1;
+        T_LOW_I2C_cp : coverpoint T_LOW_I2C;
 
     endgroup
 
@@ -1875,6 +2559,46 @@
 
     endgroup
 
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_HD_STA_I2C_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HD_STA_I2C_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HD_STA_I2C_REG_fld_cg with function sample(
+    input bit [20-1:0] T_HD_STA_I2C
+    );
+        option.per_instance = 1;
+        T_HD_STA_I2C_cp : coverpoint T_HD_STA_I2C;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_HD_RSTA_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HD_RSTA_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HD_RSTA_REG_fld_cg with function sample(
+    input bit [20-1:0] T_HD_RSTA
+    );
+        option.per_instance = 1;
+        T_HD_RSTA_cp : coverpoint T_HD_RSTA;
+
+    endgroup
+
     /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_SU_STA_REG COVERGROUPS -----------------------*/
     covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_SU_STA_REG_bit_cg with function sample(input bit reg_bit);
         option.per_instance = 1;
@@ -1892,6 +2616,26 @@
     );
         option.per_instance = 1;
         T_SU_STA_cp : coverpoint T_SU_STA;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_SU_STA_I2C_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_SU_STA_I2C_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_SU_STA_I2C_REG_fld_cg with function sample(
+    input bit [20-1:0] T_SU_STA_I2C
+    );
+        option.per_instance = 1;
+        T_SU_STA_I2C_cp : coverpoint T_SU_STA_I2C;
 
     endgroup
 
@@ -1915,6 +2659,46 @@
 
     endgroup
 
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_SU_STO_I2C_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_SU_STO_I2C_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_SU_STO_I2C_REG_fld_cg with function sample(
+    input bit [20-1:0] T_SU_STO_I2C
+    );
+        option.per_instance = 1;
+        T_SU_STO_I2C_cp : coverpoint T_SU_STO_I2C;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_DS_OD_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_DS_OD_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_DS_OD_REG_fld_cg with function sample(
+    input bit [20-1:0] T_DS_OD
+    );
+        option.per_instance = 1;
+        T_DS_OD_cp : coverpoint T_DS_OD;
+
+    endgroup
+
     /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_FREE_REG COVERGROUPS -----------------------*/
     covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_FREE_REG_bit_cg with function sample(input bit reg_bit);
         option.per_instance = 1;
@@ -1932,6 +2716,26 @@
     );
         option.per_instance = 1;
         T_FREE_cp : coverpoint T_FREE;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_FREE_I2C_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_FREE_I2C_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_FREE_I2C_REG_fld_cg with function sample(
+    input bit [32-1:0] T_FREE_I2C
+    );
+        option.per_instance = 1;
+        T_FREE_I2C_cp : coverpoint T_FREE_I2C;
 
     endgroup
 
@@ -1972,6 +2776,46 @@
     );
         option.per_instance = 1;
         T_IDLE_cp : coverpoint T_IDLE;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__HDR_TIMEOUT_EN_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__HDR_TIMEOUT_EN_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__HDR_TIMEOUT_EN_REG_fld_cg with function sample(
+    input bit [1-1:0] HDR_TIMEOUT_EN
+    );
+        option.per_instance = 1;
+        HDR_TIMEOUT_EN_cp : coverpoint HDR_TIMEOUT_EN;
+
+    endgroup
+
+    /*----------------------- I3CCSR__I3C_EC__SOCMGMTIF__T_HDR_TIMEOUT_REG COVERGROUPS -----------------------*/
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HDR_TIMEOUT_REG_bit_cg with function sample(input bit reg_bit);
+        option.per_instance = 1;
+        reg_bit_cp : coverpoint reg_bit {
+            bins value[2] = {0,1};
+        }
+        reg_bit_edge_cp : coverpoint reg_bit {
+            bins rise = (0 => 1);
+            bins fall = (1 => 0);
+        }
+
+    endgroup
+    covergroup I3CCSR__I3C_EC__SoCMgmtIf__T_HDR_TIMEOUT_REG_fld_cg with function sample(
+    input bit [20-1:0] T_HDR_TIMEOUT
+    );
+        option.per_instance = 1;
+        T_HDR_TIMEOUT_cp : coverpoint T_HDR_TIMEOUT;
 
     endgroup
 

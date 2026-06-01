@@ -2,7 +2,7 @@
 
 regfile ControllerConfigRegisters #(
     boolean controller_support
-){
+  ){
     name = "Controller Config";
     default regwidth = 32;
     reg {

@@ -4,6 +4,9 @@
   This module extracts fields related to addressing from CSRs.
 */
 
+// Required to report legal MWL/MRL/IBIL after reset
+`include "i3c_defines.svh"
+
 module configuration (
     input logic clk_i,
     input logic rst_ni,
@@ -16,29 +19,56 @@ module configuration (
     output logic i2c_standby_en_o,
     output logic i3c_active_en_o,
     output logic i3c_standby_en_o,
+    input logic is_i2c_transfer_i,
 
     // Bus monitor
-    output logic [19:0] t_su_dat_o,
-    output logic [19:0] t_hd_dat_o,
-    output logic [19:0] t_r_o,
-    output logic [19:0] t_f_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_su_dat_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_hd_dat_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_r_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_f_o,
+
+    // I2C timings
+    output logic [i3c_pkg::TimingWidth-1:0] t_low_i2c_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_high_i2c_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_su_sta_i2c_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_hd_sta_i2c_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_su_dat_i2c_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_su_sto_i2c_o,
+
+    // I3C timings
+    output logic [i3c_pkg::TimingWidth-1:0] t_high_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_high_od_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_high_init_od_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_low_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_low_od_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_hd_sta_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_hd_rsta_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_su_sta_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_su_sto_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_ds_od_o,
+
 
     // Bus timers
-    output logic [19:0] t_bus_free_o,
-    output logic [19:0] t_bus_idle_o,
-    output logic [19:0] t_bus_available_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_bus_free_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_bus_free_i2c_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_bus_idle_o,
+    output logic [i3c_pkg::TimingWidth-1:0] t_bus_available_o,
+
+    // HDR error recovery timer (I3C spec §5.1.10.1.9)
+    output logic        hdr_timeout_en_o,
+    output logic [19:0] t_hdr_timeout_o,
 
     output logic [15:0] get_mwl_o,  // Get Max Write Length
     output logic [15:0] get_mrl_o,  // Get Max Read Length
-    output logic [ 7:0] get_ibil_o,  // Get Max IBI Length
+    output logic [7:0] get_ibil_o,  // Get Max IBI Length
     output logic [15:0] get_status_fmt1_o,  // Get Status Format 1
 
     output logic [47:0] pid_o,  // Target ID
-    output logic [ 7:0] bcr_o,  // Bus Characteristics Register
-    output logic [ 7:0] dcr_o,  // Device Characteristics Register
+    output logic [7:0] bcr_o,  // Bus Characteristics Register
+    output logic [7:0] dcr_o,  // Device Characteristics Register
     output logic [47:0] virtual_pid_o,  // Target ID
-    output logic [ 7:0] virtual_bcr_o,  // Bus Characteristics Register
-    output logic [ 7:0] virtual_dcr_o,  // Device Characteristics Register
+    output logic [7:0] virtual_bcr_o,  // Bus Characteristics Register
+    output logic [7:0] virtual_dcr_o,  // Device Characteristics Register
 
     // Output effective target address (static or dynamic or recovery)
     output logic [6:0] target_sta_addr_o,
@@ -52,22 +82,23 @@ module configuration (
     output logic [6:0] target_ibi_addr_o,
     output logic target_ibi_addr_valid_o,
 
-    // Hot-Join address is always valid
-    output logic [6:0] target_hot_join_addr_o,
-
-    // Response for ENTDAA
-    output logic [63:0] daa_unique_response_o,
-
     // Target IBI
-    output logic ibi_enable_o,
+    output logic       ibi_enable_o,
     output logic [2:0] ibi_retry_num_o,
+    output logic       ibi_retry_ctr_rst_o,
 
     input logic set_mwl_i,
     input logic set_mrl_i,
     input logic set_ibil_i,
     input logic [15:0] mwl_i,
     input logic [15:0] mrl_i,
-    input logic [ 7:0] ibil_i
+    input logic [7:0] ibil_i,
+
+    output logic resume_o,
+    output logic abort_o,
+    output logic pio_rs_o,
+    output logic halt_on_cmd_seq_timeout_o,
+    output logic ctrl_irq_o
 );
 
   // Mode of operation
@@ -76,44 +107,69 @@ module configuration (
   // 10 - SCM_RUNNING
   // 11 - SCM_HOT_JOIN
   logic [1:0] stby_cr_enable_init;
+  logic bus_enable;
   assign stby_cr_enable_init =
     hwif_out_i.I3C_EC.StdbyCtrlMode.STBY_CR_CONTROL.STBY_CR_ENABLE_INIT.value;
 
-  assign i3c_active_en_o = (stby_cr_enable_init == 2'b01) | (stby_cr_enable_init == 2'b11);
+  assign i3c_active_en_o = ((stby_cr_enable_init == 2'b01) | (stby_cr_enable_init == 2'b11)) & bus_enable;
   assign i3c_standby_en_o = stby_cr_enable_init == 2'b10;
 
   // Bus Configuration
-`ifdef CONTROLLER_SUPPORT
+  // TODO: implement usage for this signal
   logic i2c_dev_present;
+`ifdef CONTROLLER_SUPPORT
   assign i2c_dev_present = hwif_out_i.I3CBase.HC_CONTROL.I2C_DEV_PRESENT.value;
-`endif // CONTROLLER_SUPPORT
+  assign halt_on_cmd_seq_timeout_o = hwif_out_i.I3CBase.HC_CONTROL.HALT_ON_CMD_SEQ_TIMEOUT.value;
+`else
+  assign i2c_dev_present = '0;
+  assign halt_on_cmd_seq_timeout_o = 1'b0;
+`endif  // CONTROLLER_SUPPORT
 
   // Disables the TTI
+  // TODO: implement usage for this signal
   logic target_xact_enable;
   assign target_xact_enable =
     hwif_out_i.I3C_EC.StdbyCtrlMode.STBY_CR_CONTROL.TARGET_XACT_ENABLE.value;
 
   // Define state: running, idle, waiting, halted, etc.
-  logic bus_enable;
-`ifdef CONTROLLER_SUPPORT
-  logic resume;
-  logic abort;
-  assign bus_enable = hwif_out_i.I3CBase.HC_CONTROL.BUS_ENABLE.value;
-  assign resume = hwif_out_i.I3CBase.HC_CONTROL.RESUME.value;
-  assign abort = hwif_out_i.I3CBase.HC_CONTROL.ABORT.value;
-`else
-  assign bus_enable = 1'b1;
-`endif // CONTROLLER_SUPPORT
 
+  logic abort, hc_intr;
 `ifdef CONTROLLER_SUPPORT
+  assign bus_enable = hwif_out_i.I3CBase.HC_CONTROL.BUS_ENABLE.value;
+  assign resume_o = hwif_out_i.I3CBase.HC_CONTROL.RESUME.value;
+  assign abort = hwif_out_i.I3CBase.HC_CONTROL.ABORT.value;  // TODO: implement aborting transaction
+  assign hc_intr = hwif_out_i.I3CBase.INTR_STATUS.intr;
+`else
+  assign bus_enable = hwif_out_i.I3C_EC.SoCMgmtIf.SOC_PAD_CONF.INPUT_ENABLE.value;
+  assign resume_o = '0;
+  assign abort = '0;
+  assign hc_intr = 1'b0;
+`endif  // CONTROLLER_SUPPORT
+
   // These affect queue ctrl logic
+  // for now these are not used since we only support PIO Mode -> it's
+  // always enabled
+  // TODO: implement DMA support
   logic pio_enable;
   logic pio_abort;
   logic pio_rs;
+  logic pio_intr_signal;
+`ifdef CONTROLLER_SUPPORT
   assign pio_enable = hwif_out_i.PIOControl.PIO_CONTROL.ENABLE.value;
   assign pio_abort = hwif_out_i.PIOControl.PIO_CONTROL.ABORT.value;
   assign pio_rs = hwif_out_i.PIOControl.PIO_CONTROL.RS.value;
-`endif // CONTROLLER_SUPPORT
+  assign pio_intr_signal = hwif_out_i.PIOControl.PIO_INTR_STATUS.intr;
+`else
+  assign pio_enable = '0;
+  assign pio_abort = '0;
+  assign pio_rs = '0;
+  assign pio_intr_signal = 1'b0;
+`endif  // CONTROLLER_SUPPORT
+
+  assign abort_o = pio_abort | abort; // since we only support PIO mode the global abort and PIO abort are handled equivalently.
+  assign pio_rs_o = pio_rs;
+  // Interrupt signal going out from the controller
+  assign ctrl_irq_o = pio_intr_signal | hc_intr;
 
   assign i2c_active_en_o = 1'b0;
   assign i2c_standby_en_o = 1'b0;
@@ -126,21 +182,46 @@ module configuration (
   // 01 - i3c active controller
   // 10 - i2c standby controller (target)
   // 11 - i3c standby controller (target)
-  assign phy_mux_select_o[0] = i3c_active_en_o | i3c_standby_en_o;
+  assign phy_mux_select_o[0] = (i3c_active_en_o | i3c_standby_en_o) & ~is_i2c_transfer_i;
   assign phy_mux_select_o[1] = i2c_standby_en_o | i3c_standby_en_o;
 
   // Configuration: bus_monitor
-  assign t_su_dat_o = 20'(hwif_out_i.I3C_EC.SoCMgmtIf.T_SU_DAT_REG.T_SU_DAT.value);
-  assign t_hd_dat_o = 20'(hwif_out_i.I3C_EC.SoCMgmtIf.T_HD_DAT_REG.T_HD_DAT.value);
-  assign t_r_o = 20'(hwif_out_i.I3C_EC.SoCMgmtIf.T_R_REG.T_R.value);
-  assign t_f_o = 20'(hwif_out_i.I3C_EC.SoCMgmtIf.T_F_REG.T_F.value);
+  assign t_su_dat_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_SU_DAT_REG.T_SU_DAT.value);
+  assign t_hd_dat_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_HD_DAT_REG.T_HD_DAT.value);
+  assign t_r_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_R_REG.T_R.value);
+  assign t_f_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_F_REG.T_F.value);
+
+  // Configuration: i2c timings
+  assign t_low_i2c_o      = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_LOW_I2C_REG.T_LOW_I2C.value);
+  assign t_high_i2c_o     = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_HIGH_I2C_REG.T_HIGH_I2C.value);
+  assign t_su_sta_i2c_o   = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_SU_STA_I2C_REG.T_SU_STA_I2C.value);
+  assign t_hd_sta_i2c_o   = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_HD_STA_I2C_REG.T_HD_STA_I2C.value);
+  assign t_su_dat_i2c_o   = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_SU_DAT_I2C_REG.T_SU_DAT_I2C.value);
+  assign t_su_sto_i2c_o   = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_SU_STO_I2C_REG.T_SU_STO_I2C.value);
+
+  // Configuration: i3c timings
+  assign t_high_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_HIGH_REG.T_HIGH.value);
+  assign t_high_od_o      = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_HIGH_OD_REG.T_HIGH_OD.value);
+  assign t_high_init_od_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_HIGH_INIT_OD_REG.T_HIGH_INIT_OD.value);
+  assign t_low_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_LOW_REG.T_LOW.value);
+  assign t_low_od_o       = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_LOW_OD_REG.T_LOW_OD.value);
+  assign t_hd_sta_o       = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_HD_STA_REG.T_HD_STA.value);
+  assign t_hd_rsta_o      = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_HD_RSTA_REG.T_HD_RSTA.value);
+  assign t_su_sta_o       = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_SU_STA_REG.T_SU_STA.value);
+  assign t_su_sto_o       = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_SU_STO_REG.T_SU_STO.value);
+  assign t_ds_od_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_DS_OD_REG.T_DS_OD.value);
 
   // Configuration: bus_timers
   // 20 bits is enough to measure 1ms for clock speed 1GHz.
   // See width_timing_csr function in tools/timing.py
-  assign t_bus_free_o = 20'(hwif_out_i.I3C_EC.SoCMgmtIf.T_FREE_REG.T_FREE.value);
-  assign t_bus_idle_o = 20'(hwif_out_i.I3C_EC.SoCMgmtIf.T_IDLE_REG.T_IDLE.value);
-  assign t_bus_available_o = 20'(hwif_out_i.I3C_EC.SoCMgmtIf.T_AVAL_REG.T_AVAL.value);
+  assign t_bus_free_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_FREE_REG.T_FREE.value);
+  assign t_bus_free_i2c_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_FREE_I2C_REG.T_FREE_I2C.value);
+  assign t_bus_idle_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_IDLE_REG.T_IDLE.value);
+  assign t_bus_available_o = i3c_pkg::TimingWidth'(hwif_out_i.I3C_EC.SoCMgmtIf.T_AVAL_REG.T_AVAL.value);
+
+  // Configuration: HDR error recovery timer
+  assign hdr_timeout_en_o = hwif_out_i.I3C_EC.SoCMgmtIf.HDR_TIMEOUT_EN_REG.HDR_TIMEOUT_EN.value;
+  assign t_hdr_timeout_o = hwif_out_i.I3C_EC.SoCMgmtIf.T_HDR_TIMEOUT_REG.T_HDR_TIMEOUT.value;
 
 
   assign target_sta_addr_valid_o =
@@ -159,17 +240,11 @@ module configuration (
     hwif_out_i.I3C_EC.StdbyCtrlMode.STBY_CR_VIRT_DEVICE_ADDR.VIRT_DYNAMIC_ADDR_VALID.value;
   assign virtual_target_dyn_addr_o = hwif_out_i.I3C_EC.StdbyCtrlMode.STBY_CR_VIRT_DEVICE_ADDR.VIRT_DYNAMIC_ADDR.value;
 
-  logic [15:0] mwl_dword;
-  logic [15:0] mrl_dword;
-
-  assign mwl_dword = 1 << (hwif_out_i.I3C_EC.TTI.QUEUE_SIZE.TX_DATA_BUFFER_SIZE.value + 1'b1);
-  assign mrl_dword = 1 << (hwif_out_i.I3C_EC.TTI.QUEUE_SIZE.RX_DATA_BUFFER_SIZE.value + 1'b1);
-
   always @(posedge clk_i or negedge rst_ni) begin : mrl_mwl
     if (~rst_ni) begin
-      get_mwl_o <= 16'd256;
-      get_mrl_o <= 16'd256;
-      get_ibil_o <= 8'd255;
+      get_mwl_o  <= 16'(`RX_FIFO_DEPTH << 2);
+      get_mrl_o  <= 16'(`TX_FIFO_DEPTH << 2);
+      get_ibil_o <= 8'd16;
     end else begin
       if (set_mwl_i) get_mwl_o <= mwl_i;
       if (set_mrl_i) get_mrl_o <= mrl_i;
@@ -178,11 +253,12 @@ module configuration (
   end
 
   assign get_status_fmt1_o = {
-    8'h00,  // Vendor-specific meaning
+    7'h00,  // Vendor-specific
+    hwif_out_i.I3C_EC.TTI.INTERRUPT_STATUS.PENDING_IBI.value,
     2'b11,  // Unable to do Handoff
-    hwif_out_i.I3C_EC.TTI.STATUS.PROTOCOL_ERROR,
-    1'b0,   // Reserved
-    hwif_out_i.I3C_EC.TTI.INTERRUPT_STATUS.PENDING_INTERRUPT
+    hwif_out_i.I3C_EC.TTI.STATUS.PROTOCOL_ERROR.value,
+    1'b0,  // Reserved
+    hwif_out_i.I3C_EC.TTI.INTERRUPT_STATUS.PENDING_INTERRUPT.value
   };
 
   assign pid_o = {
@@ -209,15 +285,13 @@ module configuration (
   };
 
   assign virtual_dcr_o = hwif_out_i.I3C_EC.StdbyCtrlMode.STBY_CR_VIRTUAL_DEVICE_CHAR.DCR.value;
-  assign daa_unique_response_o = {pid_o, bcr_o, dcr_o};
 
   assign target_ibi_addr_o = target_dyn_addr_valid_o ? target_dyn_addr_o : target_sta_addr_o;
   assign target_ibi_addr_valid_o = target_sta_addr_valid_o || target_dyn_addr_valid_o;
 
-  assign target_hot_join_addr_o = 7'h02;
-
   // Configuration: Target IBI
   assign ibi_enable_o = hwif_out_i.I3C_EC.TTI.CONTROL.IBI_EN.value;
   assign ibi_retry_num_o = hwif_out_i.I3C_EC.TTI.CONTROL.IBI_RETRY_NUM.value;
+  assign ibi_retry_ctr_rst_o = hwif_out_i.I3C_EC.TTI.RESET_CONTROL.IBI_RETRY_CTR_RST.value;
 
 endmodule

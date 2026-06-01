@@ -17,7 +17,7 @@ module csri
     output I3CCSR_pkg::I3CCSR__I3C_EC__SecFwRecoveryIf__out_t hwif_rec_o,
 
     // SoC Management CSR Interface
-    input I3CCSR_pkg::I3CCSR__I3C_EC__SoCMgmtIf__in_t hwif_socmgmt_i,
+    input  I3CCSR_pkg::I3CCSR__I3C_EC__SoCMgmtIf__in_t  hwif_socmgmt_i,
     output I3CCSR_pkg::I3CCSR__I3C_EC__SoCMgmtIf__out_t hwif_socmgmt_o,
 `endif  // TARGET_SUPPORT
 
@@ -67,6 +67,13 @@ module csri
     input logic       set_newda_i,
     input logic       set_newda_virtual_device_i,
 
+    input logic [15:0] mwl_i,
+    input logic        set_mwl_i,
+    input logic [15:0] mrl_i,
+    input logic        set_mrl_i,
+    input logic [ 7:0] ibil_i,
+    input logic        set_ibil_i,
+
     input logic [7:0] rst_action_i,
     input logic rst_action_valid_i
 );
@@ -103,18 +110,17 @@ module csri
 
   // Update Standby Controller mode based on the controller configuration status
   always_comb begin : wire_hwif_rstact
-    hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_CCC_CONFIG_RSTACT_PARAMS.RST_ACTION.we = rst_action_valid_i;
-    hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_CCC_CONFIG_RSTACT_PARAMS.RST_ACTION.next = rst_action_valid_i ? rst_action_i : '0;
+    hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_CCC_CONFIG_RSTACT_PARAMS.RST_ACTION.next = rst_action_valid_i ? rst_action_i : 9'h1;
   end
 
   // Update Standby Controller mode based on the controller configuration status
   always_comb begin : wire_address_setting
     // Target address
     if (set_dasa_valid_i | rstdaa_i) begin
-      hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_DEVICE_ADDR.DYNAMIC_ADDR_VALID.we = rstdaa_i ? '1 : set_dasa_valid_i && ~set_dasa_virtual_device_i;
-      hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_DEVICE_ADDR.DYNAMIC_ADDR_VALID.next = rstdaa_i ? '0 : ~set_dasa_virtual_device_i ? set_dasa_valid_i : '0;
-      hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_DEVICE_ADDR.DYNAMIC_ADDR.we = rstdaa_i ? '1 : set_dasa_valid_i && ~set_dasa_virtual_device_i;
-      hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_DEVICE_ADDR.DYNAMIC_ADDR.next = rstdaa_i ? '0 : ~set_dasa_virtual_device_i ? set_dasa_i : '0;
+      hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_DEVICE_ADDR.DYNAMIC_ADDR_VALID.we = (set_dasa_valid_i | rstdaa_i) && ~(set_dasa_virtual_device_i);
+      hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_DEVICE_ADDR.DYNAMIC_ADDR_VALID.next = (rstdaa_i && ~(set_dasa_virtual_device_i)) ? '0: set_dasa_valid_i;
+      hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_DEVICE_ADDR.DYNAMIC_ADDR.we = (set_dasa_valid_i | rstdaa_i) && ~(set_dasa_virtual_device_i);
+      hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_DEVICE_ADDR.DYNAMIC_ADDR.next = (rstdaa_i && ~(set_dasa_virtual_device_i)) ? '0 : set_dasa_i;
       // Virtual device address
       hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_VIRT_DEVICE_ADDR.VIRT_DYNAMIC_ADDR_VALID.we = rstdaa_i ? '1 : set_dasa_valid_i && set_dasa_virtual_device_i;
       hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_VIRT_DEVICE_ADDR.VIRT_DYNAMIC_ADDR_VALID.next = rstdaa_i ? '0 : set_dasa_virtual_device_i ? set_dasa_valid_i : '0;
@@ -153,6 +159,16 @@ module csri
     end
   end
 
+  always_comb begin : wire_max_lengths
+    hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_MWL.MWL.we    = set_mwl_i;
+    hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_MWL.MWL.next  = mwl_i;
+    hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_MRL.MRL.we    = set_mrl_i;
+    hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_MRL.MRL.next  = mrl_i;
+    hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_MRL.IBIL.we   = set_ibil_i;
+    hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_MRL.IBIL.next = ibil_i;
+  end
+
+
   I3CCSR i3c_csr (
       .clk(clk_i),
       .rst('0),  // Unused, CSRs are reset through hwif_in.rst_ni
@@ -176,7 +192,6 @@ module csri
 
   always_comb begin : wire_unconnected_regs
     hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_VIRT_DEVICE_ADDR.VIRT_STATIC_ADDR_VALID.next = '0;
-    hwif_in.I3C_EC.StdbyCtrlMode.__rsvd_3.__rsvd.next = '0;
     hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_INTR_SIGNAL_ENABLE.STBY_CR_OP_RSTACT_SIGNAL_EN.we = '0;
     hwif_in.I3C_EC.StdbyCtrlMode.STBY_CR_VIRT_DEVICE_ADDR.VIRT_STATIC_ADDR.next = '0;
     hwif_in.I3C_EC.CtrlCfg.CONTROLLER_CONFIG.OPERATION_MODE.next = '0;

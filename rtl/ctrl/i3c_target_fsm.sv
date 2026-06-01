@@ -27,133 +27,148 @@
       * dynamic address will be used for I3C transfers
 */
 
-module i3c_target_fsm #(
-    parameter int unsigned RxDataWidth  = 8,
-    parameter int unsigned TxDataWidth  = 8,
-    parameter int unsigned IbiDataWidth = 8
-) (
-    input clk_i,  // clock
-    input rst_ni, // active low reset
+module i3c_target_fsm import i3c_pkg::*; (
+  input  clk_i,  // clock
+  input  rst_ni, // active low reset
 
-    input target_enable_i,  // enable target functionality
+  input  logic target_enable_i, // enable target functionality
 
-    // Bus monitor interface
-    input logic bus_start_det_i,
-    input logic bus_rstart_det_i,
-    input logic bus_stop_det_i,
-    input logic bus_timeout_i,  // The bus timed out, with SCL held low for too long.
+  // Bus monitor interface
+  input  logic bus_start_det_i,
+  input  logic bus_rstart_det_i,
+  input  logic bus_stop_det_i,
+  input  logic bus_timeout_i,  // The bus timed out, with SCL held low for too long.
+  input  logic bus_available_i,
+  input  logic arbitration_lost_i,
 
-    output logic target_idle_o,  // indicates the target is idle
-    output logic target_transmitting_o,  // Target is transmitting SDA (disambiguates high sda_o)
+  input  logic scl_negedge_i,  // For assertions only
 
-    // Bus TX interface
-    input logic bus_tx_req_err_i,
-    input logic bus_tx_done_i,
-    input logic bus_tx_idle_i,
-    output logic bus_tx_req_byte_o,
-    output logic bus_tx_req_bit_o,
-    output logic [TxDataWidth-1:0] bus_tx_req_value_o,
-    output logic bus_tx_sel_od_pp_o,
+  output logic target_idle_o,  // indicates the target is idle
 
-    // Bus RX interface
-    output logic bus_rx_req_bit_o,
-    output logic bus_rx_req_byte_o,
-    input logic bus_rx_done_i,
-    input logic bus_rx_idle_i,
-    input logic [RxDataWidth-1:0] bus_rx_data_i,
+  // Bus Tx interface
+  output bus_tx_req_t bus_tx_req_o,
+  input  bus_tx_rsp_t bus_tx_rsp_i,
 
-    // TX FIFO used for Target Read
-    input  logic                   tx_desc_avail_i,
-    input  logic                   tx_fifo_rvalid_i,  // indicates there is valid data in tx_fifo
-    output logic                   tx_fifo_rready_o,  // pop entry from tx_fifo
-    input  logic [TxDataWidth-1:0] tx_fifo_rdata_i,   // byte in tx_fifo to be sent to host
-    output logic                   tx_host_nack_o,    // NACK has been received during transmission
-    input  logic                   tx_last_byte_i,
+  // Bus Rx interface
+  output bus_rx_req_t bus_rx_req_o,
+  input  bus_rx_rsp_t bus_rx_rsp_i,
 
-    // RX FIFO used for Target Write
-    output logic                   rx_fifo_wvalid_o,  // high if there is valid data in rx_fifo
-    output logic [RxDataWidth-1:0] rx_fifo_wdata_o,   // data to write to rx_fifo from target
-    input  logic                   rx_fifo_wready_i,
-    output logic                   rx_last_byte_o,
+  // TX FIFO used for Target Read
+  input  logic      tx_desc_avail_i,
+  input  logic      tx_fifo_rvalid_i,  // indicates there is valid data in tx_fifo
+  output logic      tx_fifo_rready_o,  // pop entry from tx_fifo
+  input  i3c_byte_t tx_fifo_rdata_i,   // byte in tx_fifo to be sent to Controller
+  output logic      tx_host_nack_o,    // NACK has been received during transmission
+  input  logic      tx_last_byte_i,
 
-    // Target address
-    input logic [6:0] target_sta_address_i,
-    input logic target_sta_address_valid_i,
-    input logic [6:0] target_dyn_address_i,
-    input logic target_dyn_address_valid_i,
-    input logic [6:0] virtual_target_sta_address_i,
-    input logic virtual_target_sta_address_valid_i,
-    input logic [6:0] virtual_target_dyn_address_i,
-    input logic virtual_target_dyn_address_valid_i,
+  // RX FIFO used for Target Write
+  output logic      rx_fifo_wvalid_o,  // high if there is valid data for rx_fifo
+  output i3c_byte_t rx_fifo_wdata_o,   // data to write to rx_fifo from target
+  input  logic      rx_fifo_wready_i,
+  output logic      rx_last_byte_o,
 
-    output logic event_target_nack_o,  // this target sent a NACK (this is used to keep count)
-    output logic event_cmd_complete_o,  // Command is complete
-    output logic event_unexp_stop_o,  // target received an unexpected stop
-    output logic event_tx_arbitration_lost_o,  // Arbitration was lost during a read transfer
-    output logic event_tx_bus_timeout_o,  // Bus timed out during a read transfer
-    output logic event_read_cmd_received_o,  // A read awaits confirmation for TX FIFO release
+  // Target address
+  input  logic [6:0] target_sta_addr_i,
+  input  logic       target_sta_addr_valid_i,
+  input  logic [6:0] target_dyn_addr_i,
+  input  logic       target_dyn_addr_valid_i,
+  input  logic [6:0] virtual_target_sta_addr_i,
+  input  logic       virtual_target_sta_addr_valid_i,
+  input  logic [6:0] virtual_target_dyn_addr_i,
+  input  logic       virtual_target_dyn_addr_valid_i,
+  // Required for decision whether to act upon IBI requests
+  input  logic       target_ibi_addr_valid_i,
+  input  logic [6:0] target_ibi_addr_i,
 
-    input  logic target_reset_detect_i,
-    input  logic hdr_exit_detect_i,
-    input  logic is_in_hdr_mode_i,
-    output logic te0_detected_o,
-    input  logic ibi_enable_i,           // TTI.CONTROL.IBI_EN
+  // IBI data interface
+  input  logic      ibi_byte_valid_i,
+  output logic      ibi_byte_ready_o,
+  input  i3c_byte_t ibi_byte_i,
+  input  logic      ibi_byte_last_i,
+  output logic      ibi_byte_flush_o,     // Aborts IBI and flushes TTI IBI Queue
 
-    // Interfacing with IBI subFSMs
-    input  logic ibi_pending_i,
-    output logic ibi_begin_o,
-    input  logic ibi_done_i,
+  // IBI control / status
+  input  logic [2:0]  ibi_retry_num_i,     // TTI.CONTROL.IBI_RETRY_NUM
+  input  logic        ibi_retry_ctr_rst_i, // TTI.RESET_CONTROL.IBI_RETRY_CTR_RST
+  output ibi_status_e ibi_status_o,        // TTI.STATUS.LAST_IBI_STATUS
+  output logic        ibi_status_we_o,     // TTI.STATUS.LAST_IBI_STATUS write enable, triggers IRQ
 
-    // Interfacing with CCC subFSMs
-    output logic [7:0] ccc_o,
-    output logic ccc_valid_o,
-    input logic is_ccc_done_i,
-    input logic invalid_ccc_i,
-    input logic is_next_ccc_i,
+  output logic [7:0] last_addr_o,     // Includes rnw as LSB
+  output logic       last_addr_valid_o,
 
-    input logic is_hotjoin_done_i,
+  output logic event_target_nack_o,  // this target sent a NACK (this is used to keep count)
+  output logic event_cmd_complete_o,  // Command is complete
+  output logic event_unexp_stop_o,  // target received an unexpected stop
+  output logic event_tx_arbitration_lost_o,  // Arbitration was lost during a read transfer
+  output logic event_tx_bus_timeout_o,  // Bus timed out during a read transfer
+  output logic event_read_cmd_received_o,  // A read awaits confirmation for TX FIFO release
 
-    output logic [7:0] last_addr_o,
-    output logic       last_addr_valid_o,
+  input  logic target_reset_detect_i,
+  input  logic hdr_exit_detect_i,
+  input  logic in_hdr_mode_i,          // From CCC module: currently in HDR mode
+  input  logic ibi_enable_i,           // TTI.CONTROL.IBI_EN
 
-    input logic scl_negedge_i,
-    input logic scl_posedge_i,
-    input logic sda_negedge_i,
-    input logic sda_posedge_i,
-    input logic bus_free_i,
-    input logic bus_idle_i,
+  // Interfacing with CCC subFSMs
+  output ccc_cmd_e  ccc_data_o,
+  output logic      ccc_valid_o,
+  input  logic      is_ccc_done_i,
+  input  logic      is_next_ccc_i,
 
-    output logic parity_err_o,
-    output logic rx_overflow_err_o,
-    output logic virtual_device_sel_o,
-    output logic xfer_in_progress_o,
+  // TE0 Error Interface (HDR Exit condition)
+  input  logic      te0_enable_i,
+  output logic      te0_err_o,
 
-    output logic tx_pr_start_o,
-    output logic tx_pr_abort_o
+  input  logic is_hotjoin_done_i,
+
+  // TE2 Error Detection Enable
+  input  logic te2_err_det_en_i,
+
+  output logic te2_err_priv_wr,
+  output logic rx_overflow_err_o,
+  output logic virtual_device_sel_o,
+  output logic xfer_in_progress_o,
+
+  output logic tx_pr_start_o,
+  output logic tx_pr_abort_o
 );
-  logic bus_start_det;
-  assign bus_start_det = bus_start_det_i | bus_rstart_det_i;
 
-  // TODO: Set OD/PP in correct states
-  assign bus_tx_sel_od_pp_o = '0;
+  logic bus_any_start_det;
 
   // Target specific variables
   logic nack_transaction_q, nack_transaction_d;
+  logic rx_overflow_err_q, rx_overflow_err_d;
+  logic rx_fifo_wvalid_raw;
 
-  // Latch whether this transaction is to be NACK'd.
-  always_ff @(posedge clk_i or negedge rst_ni) begin : clk_nack_transaction
-    if (!rst_ni) begin
-      nack_transaction_q <= 1'b0;
-    end else begin
-      nack_transaction_q <= nack_transaction_d;
-    end
-  end
 
-  logic [RxDataWidth-1:0] rx_data_byte;
-  logic rx_data_byte_valid;
-  logic [TxDataWidth-1:0] tx_data_byte;
-  logic tx_data_byte_valid;
-  logic tx_end_xfer;
+  i3c_byte_t last_byte;
+
+  logic bus_tx_req_bit;
+  logic bus_rx_req_bit, bus_rx_req_byte;
+
+  logic parity_bit;
+  logic parity_err;
+  logic rx_fifo_wvalid;
+
+  logic      bus_addr_valid;
+  logic      bus_rnw_d, bus_rnw_q;
+  i3c_addr_t bus_addr_d, bus_addr_q;
+
+  logic is_our_addr_match, is_virtual_addr_match, is_any_addr_match, is_rsvd_byte_match;
+
+  logic [2:0] ibi_retry_cnt_q, ibi_retry_cnt_d;
+  logic       ibi_pending, ibi_can_retry;
+
+  // Data type to encode various conditions for suppressing the servicing of pending IBIs
+  typedef enum logic [1:0] { 
+    InhibitNone,
+    InhibitRetry,
+    InhibitArbLost
+  } ibi_inhibit_e;
+
+  ibi_inhibit_e ibi_inhibit_q, ibi_inhibit_d;
+
+  ccc_cmd_e  ccc_data;
+  logic      ccc_data_valid;
 
   // State definitions
   // We can go to CCC secondary FSM after {S|SR,Byte,ACK,First bit}
@@ -165,10 +180,12 @@ module i3c_target_fsm #(
     // Wait for:
     // - Start
     // - pending IBI
-    // - hot-join
+    // - hot-join (currently not implemented)
     // - reset pattern
-    Idle = 8'h00,
-    // Read first incoming byte of the transaction
+    Idle,
+    // Read first incoming byte of the transaction, arbitrable
+    RxFByteArb,
+    // Read first incoming byte of the transaction, non-arbitrable
     RxFByte,
     // Check if we should participate in the xfer
     CheckFByte,
@@ -186,15 +203,12 @@ module i3c_target_fsm #(
     RxPWriteTbit,
     // Send data in Private Read transfer
     TxPReadData,
-    TxPReadTbit,
-    // Transfer is not targeted to us, wait for SR or P
-    Wait,
-
-    // If bus is available and an IBI is pending
-    // Go to subFSM for IBI execution
-    DoIBI,
-    // After IBI is done, return here
-    DoneIBI,
+    // Signal to Controller in Tbit to transfer more bytes
+    TxPReadTbitCont,
+    // Signal to Controller in Tbit to end the transfer
+    TxPReadTbitEnd,
+    // Transfer is not targeted to us or we are not ready, NAck and wait for SR or P
+    WaitRestart,
 
     // There is a CCC to process
     // Go to subFSM for CCC execution
@@ -202,58 +216,93 @@ module i3c_target_fsm #(
     // After CCC is done, return here
     DoneCCC,
 
+    // Currently not implemented and not reachable
     DoHotJoin,
 
     // Reset pattern causes reset of the core
     // so "Done" return state is not needed.
     DoRstAction,
-    // state to park in while the bus is in HDR mode
-    // in this state we ignore all the traffic
-    HDRMode = 8'ha0,
-    DoHdrExit,
-    WaitHDRExitOrIdle
+
+    // HDR Mode: ignore all bus activity until HDR exit pattern detected
+    InHDRMode,
+
+    // IBI handling states
+    // Drive IBI address onto SDA after pulling it low on a bus available condition
+    IbiDriveAddr,
+    // Read (N)ACK bit and check whether the Controller accepted our IBI request
+    IbiReadAck,
+    // Send IBI payload in push-pull mode, including MDB
+    IbiSendData,
+    // Try to send another IBI payload byte
+    IbiTbitCont,
+    // Last IBI payload byte sent; signal end to Controller
+    IbiTbitEnd
   } primary_state_e;
 
   primary_state_e state_q, state_d;
 
+
+  // Either Start or RStart condition
+  assign bus_any_start_det = bus_start_det_i || bus_rstart_det_i;
+
+  // FUTUREFIX: tx_host_nack_o is irrelevant for v1p5 release
+  assign tx_host_nack_o = 1'b0;
+
+  // Shorthand helper signal for checking for active bit requests
+  assign bus_tx_req_bit = bus_tx_req_o.req_valid && (bus_tx_req_o.req_type == RawBit);
+
+  assign bus_rx_req_o = '{
+    req_byte: bus_rx_req_byte,
+    req_bit:  bus_rx_req_bit
+  };
+
+  assign rx_fifo_wdata_o = last_byte;
+
+  // Calculate parity bit
+  assign parity_bit = ^{last_byte, 1'b1};
+
+  // Primary target address matching
+  // Per I3C spec: Once a target has a dynamic address, it stops responding to its static address
+  assign is_our_addr_match = ((bus_addr_q == target_dyn_addr_i) && target_dyn_addr_valid_i) ||
+                             ((bus_addr_q == target_sta_addr_i) && target_sta_addr_valid_i && ~target_dyn_addr_valid_i);
+
+  // Virtual target address matching
+  // Per I3C spec: Once a target has a dynamic address, it stops responding to its static address
+  assign is_virtual_addr_match = ((bus_addr_q == virtual_target_dyn_addr_i) && virtual_target_dyn_addr_valid_i) ||
+                                 ((bus_addr_q == virtual_target_sta_addr_i) && virtual_target_sta_addr_valid_i && ~virtual_target_dyn_addr_valid_i);
+
+  assign is_any_addr_match = is_our_addr_match || is_virtual_addr_match;
+
+  assign is_rsvd_byte_match = ({bus_addr_q, bus_rnw_q} == 8'hFC); // `I3C_RSVD_BYTE
+
+  // Shorthand signal for when all conditions for sending an IBI are acutally met
+  assign ibi_pending = ibi_byte_valid_i && ibi_enable_i && target_ibi_addr_valid_i;
+  // Retry allowed if count not yet met or indefinite attempts allowed
+  assign ibi_can_retry = (ibi_retry_num_i == 3'd7) || (ibi_retry_cnt_q <= ibi_retry_num_i);
+
+  // TE0 error: Invalid reserved address + RnW combinations
+  // Uses shared function from i3c_pkg to ensure consistency with ccc.sv
+  // Qualified with bus_addr_valid (single-cycle pulse) so te0_err_o is a
+  // single-cycle pulse, consistent with all other TE error signals.
+  assign te0_err_o = te0_enable_i && bus_addr_valid && is_te0_rsvd_addr_err(bus_addr_d, bus_rnw_d);
+
+  // Latch whether this transaction is to be NACK'd.
+  always_ff @(posedge clk_i or negedge rst_ni) begin : clk_nack_transaction
+    if (!rst_ni) begin
+      nack_transaction_q <= 1'b0;
+    end else begin
+      nack_transaction_q <= nack_transaction_d;
+    end
+  end
+
   // Register last input byte
-  logic [7:0] last_byte, last_addr;
   always_ff @(posedge clk_i or negedge rst_ni) begin : proc_last_byte
     if (~rst_ni) begin
       last_byte <= '0;
     end else begin
-      if (bus_rx_done_i & bus_rx_req_byte_o) last_byte <= bus_rx_data_i;
+      if (bus_rx_rsp_i.done && bus_rx_req_byte) last_byte <= bus_rx_rsp_i.data;
     end
   end
-
-  assign rx_fifo_wdata_o = last_byte;
-
-  // ACK, T-bit, Parity
-  logic ack_done, parity_bit;
-  logic rx_tbit_done, tx_tbit_done;
-  assign ack_done = bus_tx_done_i;
-  assign tx_tbit_done = bus_tx_done_i;
-  assign rx_tbit_done = bus_rx_done_i;
-  assign parity_bit = ^{last_byte, 1'b1};
-
-  // Decoder of bytes
-  logic bus_addr_valid;
-  logic bus_rnw_d, bus_rnw_q;
-  logic [6:0] bus_addr_d, bus_addr_q;
-  logic is_our_addr_match, is_rsvd_byte_match, is_virtual_addr_match, is_incorrect_byte_match;
-
-  assign is_our_addr_match = target_dyn_address_valid_i ? (target_dyn_address_i == bus_addr_q) :
-                             target_sta_address_valid_i ? (target_sta_address_i == bus_addr_q) :
-                             1'b0;
-
-  assign is_virtual_addr_match = virtual_target_dyn_address_valid_i ? (virtual_target_dyn_address_i == bus_addr_q) :
-                                 virtual_target_sta_address_valid_i ? (virtual_target_sta_address_i == bus_addr_q) :
-                                 1'b0;
-
-  assign is_rsvd_byte_match = ({bus_addr_q, bus_rnw_q} == 8'hFC);
-
-  assign is_incorrect_addr_match = ({bus_addr_q, bus_rnw_q} inside {
-      8'h7C, 8'hBC, 8'hDC, 8'hEC, 8'hF4, 8'hF8, 8'hFE, 8'hFD});
 
   always_ff @(posedge clk_i or negedge rst_ni) begin : update_bus_addr_matcher
     if (~rst_ni) begin
@@ -272,21 +321,22 @@ module i3c_target_fsm #(
 
   assign last_addr_o = {bus_addr_q, bus_rnw_q};
 
-  always_ff @(posedge clk_i or negedge rst_ni)
+  always_ff @(posedge clk_i or negedge rst_ni) begin
     if (~rst_ni) begin
       last_addr_valid_o <= '0;
-    end else if (bus_start_det) begin
+    end else if (bus_any_start_det || bus_stop_det_i || in_hdr_mode_i) begin
       last_addr_valid_o <= '0;
     end else if (bus_addr_valid) begin
       last_addr_valid_o <= '1;
     end
+  end
 
-  logic parity_err;
   always_ff @(posedge clk_i or negedge rst_ni) begin : latch_parity_error
     if (~rst_ni) begin
       parity_err <= 1'b0;
     end else begin
-      if (parity_err_o) begin
+      // te2_err_priv_wr is already gated with te2_err_det_en_i at detection source
+      if (te2_err_priv_wr) begin
         parity_err <= 1'b1;
       end else if (target_idle_o) begin
         parity_err <= 1'b0;
@@ -294,24 +344,38 @@ module i3c_target_fsm #(
     end
   end
 
-  logic rx_overflow_err_q, rx_overflow_err_r;
+
+  // RX FIFO valid before overflow gating: byte complete with no protocol error.
+  // Gate with bus_rx_rsp_i.done so that STOP/Sr during the T-bit phase does NOT
+  // push an unchecked byte (the T-bit was never received, parity was never verified).
+  assign rx_fifo_wvalid_raw = (state_q == RxPWriteTbit) && bus_rx_rsp_i.done &&
+                              !(te2_err_priv_wr || parity_err);
+
+  // Overflow detection using rx_fifo_wvalid_raw to detect overflow on the same
+  // cycle the byte completes, avoiding a combo loop (raw does not depend on
+  // rx_overflow_err_d).
+  always_comb begin
+    rx_overflow_err_d = rx_overflow_err_q;
+
+    if (rx_fifo_wvalid_raw & ~rx_fifo_wready_i) begin
+      rx_overflow_err_d = 1'b1;
+    end else if (target_idle_o | state_d inside {RxFByte, Idle}) begin
+      rx_overflow_err_d = 1'b0;
+    end 
+  end 
   always_ff @(posedge clk_i or negedge rst_ni) begin : latch_rx_overflow_error
     if (~rst_ni) begin
-      rx_overflow_err_r <= 1'b0;
       rx_overflow_err_q <= 1'b0;
     end else begin
-      rx_overflow_err_q <= rx_overflow_err_r;
-      if (state_d == RxPWriteData & ~rx_fifo_wready_i & rx_fifo_wvalid_o) rx_overflow_err_r <= 1'b1;
-      else if (target_idle_o | state_d inside {RxFByte, Idle}) rx_overflow_err_r <= 1'b0;
-    end
-  end
-  assign rx_overflow_err_o = ~rx_overflow_err_q & rx_overflow_err_r;
+      rx_overflow_err_q <= rx_overflow_err_d;
+    end 
+  end 
 
-  // RX FIFO valid when we finish reading byte (leave RxPWriteData) and there was no parity error
-  logic rx_fifo_wvalid;
-  assign rx_fifo_wvalid = (state_q == RxPWriteTbit) &
-                            (state_d != RxPWriteTbit) &
-                            ~(parity_err | rx_overflow_err_o);
+  assign rx_overflow_err_o = ~rx_overflow_err_q & rx_overflow_err_d;
+
+  // Final gated valid: block the push if overflow is detected this cycle.
+  assign rx_fifo_wvalid = rx_fifo_wvalid_raw & ~rx_overflow_err_d;
+
 
   always_ff @(posedge clk_i or negedge rst_ni) begin : latch_rx_fifo_wvalid
     if (~rst_ni) begin
@@ -325,333 +389,477 @@ module i3c_target_fsm #(
       end
     end
   end
-  // Last RX byte when we leave Private Write loop
-  assign rx_last_byte_o = (state_q == RxPWriteData) & (state_d inside {RxFByte, Idle});
-
-  // TX FIFO ready when we start writing byte (enter TxPReadData)
-  // Enterng the TXPReadData state, then asserting rready will cause a byte to be
-  // consumed from the FIFO, but we might cancel TxPReadData if Rstart occurs.
-  // On TX cancel, we flush the FIFO, aborting transaction.
-  assign tx_fifo_rready_o = (state_q != TxPReadData) & (state_d == TxPReadData);
-
-  always_ff @(posedge clk_i or negedge rst_ni) begin : set_last_byte_in_xfer
-    if (~rst_ni) begin
-      tx_end_xfer <= '0;
-    end else begin
-      if (bus_tx_done_i & bus_tx_req_bit_o) tx_end_xfer <= tx_last_byte_i;
-    end
-  end
-
-  always_ff @(posedge clk_i or negedge rst_ni) begin : capture_tx_data_from_queue
-    if (~rst_ni) begin
-      tx_data_byte <= '0;
-    end else begin
-      if (tx_fifo_rready_o | tx_end_xfer) tx_data_byte <= tx_fifo_rdata_i;
-    end
-  end
+  // Normal path: FSM completes the T-bit in RxPWriteTbit, transitions to
+  // RxPWriteData, and waits for the next byte. Sr/Stop arrives in RxPWriteData,
+  // setting state_d to RxFByte or Idle respectively.
+  //
+  // Abort path: If Sr/Stop arrives while still in RxPWriteTbit (before the T-bit
+  // completes), the incomplete byte is NOT pushed (gated by bus_rx_rsp_i.done
+  // above), but we still need a descriptor for the previously completed bytes.
+  // Including RxPWriteTbit in the state_q check covers this abort case. The
+  // normal T-bit completion (state_d = RxPWriteData) is excluded by the
+  // state_d inside {RxFByte, Idle} check, so no spurious descriptor is generated.
+  assign rx_last_byte_o = (state_q inside {RxPWriteData, RxPWriteTbit}) &&
+                          (state_d inside {RxFByte, Idle});
 
   // Logic for latching CCC code
-  logic [7:0] ccc_code;
-  logic ccc_code_valid;
-  always_ff @(posedge clk_i or negedge rst_ni) begin : latch_CCC_code
+  always_ff @(posedge clk_i or negedge rst_ni) begin : latch_ccc_data
     if (~rst_ni) begin
-      ccc_o <= '0;
-    end else begin
-      if (ccc_code_valid) ccc_o <= ccc_code;
+      ccc_data_o <= ccc_cmd_e'('0);
+    end else if (ccc_data_valid) begin
+      ccc_data_o <= ccc_data;
     end
   end
 
-  // State outputs
-  always_comb begin : state_outputs
-    bus_rx_req_bit_o = '0;
-    bus_rx_req_byte_o = '0;
-    bus_tx_req_byte_o = '0;
-    bus_tx_req_bit_o = '0;
-    bus_tx_req_value_o = 8'h1;
-    tx_pr_start_o = '0;
-    tx_pr_abort_o = '0;
-    tx_host_nack_o = '0;
-    bus_addr_d = '0;
-    bus_addr_valid = '0;
-    bus_rnw_d = '0;
-    nack_transaction_d = '0;
-    parity_err_o = '0;
-    ibi_begin_o = '0;
-    ccc_valid_o = 1'b0;
-    ccc_code = '0;
-    ccc_code_valid = 1'b0;
-    te0_detected_o = 1'b0;
+  // IBI retry counter logic
+  always_comb begin
+    ibi_retry_cnt_d = ibi_retry_cnt_q;
 
-    case (state_q)
-      Idle:
-      ibi_begin_o = target_enable_i && !target_reset_detect_i && ibi_enable_i && ibi_pending_i && bus_free_i;
-      RxFByte: begin
-        bus_rx_req_byte_o = ~bus_start_det;
-        if (bus_rx_done_i) begin
-          bus_addr_valid = 1'b1;
-          bus_addr_d = bus_rx_data_i[7:1];
-          bus_rnw_d = bus_rx_data_i[0];
+    // Reset counter on success or request by FW, increment on appropriate failure types
+    if ((ibi_status_we_o && (ibi_status_o == IbiSuccess)) || ibi_retry_ctr_rst_i) begin
+      ibi_retry_cnt_d = '0;
+    end else if ((ibi_retry_num_i != 3'd7) && ibi_status_we_o &&
+                 (ibi_status_o inside {IbiFailureAddressArb, IbiFailureNack})) begin
+      ibi_retry_cnt_d = ibi_retry_cnt_q + 1;
+    end
+  end
+
+  // Mini-FSM to suppress repeated IBI attempts and status reports on certain conditions
+  always_comb begin : fsm_ibi_inhibit
+    ibi_inhibit_d = ibi_inhibit_q;
+    case (ibi_inhibit_q)
+      // Normal operation; leave when any suppression condition becomes true
+      InhibitNone: begin
+        if (ibi_status_we_o && (ibi_status_o == IbiFailureAddressArb)) begin
+          ibi_inhibit_d = InhibitArbLost;
+        end else if (ibi_status_we_o && (ibi_status_o == IbiFailureRetry)) begin
+          ibi_inhibit_d = InhibitRetry;
         end
       end
-      CheckFByte: begin
-        if (is_incorrect_addr_match) begin
-          te0_detected_o = 1'b1;
-        // Signal begin of a private read
-        end else if (!is_rsvd_byte_match)
-            tx_pr_start_o = (is_our_addr_match || is_virtual_addr_match) && bus_rnw_q;
-      end
-      TxAckFByte: begin
-        bus_tx_req_bit_o = 1'b1;
-        bus_tx_req_value_o[0] = 1'b0;  // LSB is the only bit used for bit TX transfer
-      end
-      RxSByte: begin
-        bus_rx_req_byte_o = ~bus_start_det;
-        if (bus_rx_done_i) begin
-          bus_addr_valid = 1'b1;
-          bus_addr_d = bus_rx_data_i[7:1];
-          bus_rnw_d = bus_rx_data_i[0];
-          // If we got CCC, this is the Command Code, we need to latch it for
-          // the CCC FSM
-          ccc_code = bus_rx_data_i;
-          ccc_code_valid = 1'b1;
+      // IBIs suppressed due to lost arbitration: Release upon bus available condition
+      InhibitArbLost: begin
+        if (bus_available_i) begin
+          ibi_inhibit_d = InhibitNone;
         end
       end
-      RxSByteRepeated: begin
-        bus_rx_req_byte_o = ~bus_start_det;
-        if (bus_rx_done_i) begin
-          bus_addr_valid = 1'b1;
-          bus_addr_d = bus_rx_data_i[7:1];
-          bus_rnw_d = bus_rx_data_i[0];
+      // IBIs suppressed due to retry failure: Release upon retry condition becoming true again
+      InhibitRetry: begin
+        if (ibi_can_retry) begin
+          ibi_inhibit_d = InhibitNone;
         end
       end
-      CheckSByte: begin
-        // Signal begin of a private read
-        tx_pr_start_o = (is_our_addr_match || is_virtual_addr_match) && bus_rnw_q;
-      end
-      TxAckSByte: begin
-        bus_tx_req_bit_o   = 1'b1;
-        bus_tx_req_value_o = '0;
-      end
-      RxPWriteData: begin
-        // TODO: Handle FIFO handshake properly
-        bus_rx_req_byte_o = ~bus_start_det;
-      end
-      RxPWriteTbit: begin
-        bus_rx_req_bit_o = ~bus_start_det;
-        if (rx_tbit_done) parity_err_o = (parity_bit != bus_rx_data_i[0]);
-      end
-      TxPReadData: begin
-        bus_tx_req_byte_o  = 1'b1;
-        bus_tx_req_value_o = tx_data_byte;
-        tx_pr_abort_o = bus_start_det | bus_stop_det_i;
-      end
-      TxPReadTbit: begin
-        bus_tx_req_bit_o   = 1'b1;
-        bus_tx_req_value_o = {7'h0, ~tx_end_xfer};
-        tx_pr_abort_o = bus_start_det | bus_stop_det_i;
-      end
-      Wait: begin
-        nack_transaction_d = 1'b1;
-      end
-
-      DoIBI: begin
-      end
-      DoneIBI: begin
-      end
-
-      DoCCC: begin
-        ccc_valid_o = 1'b1;
-      end
-      DoneCCC: begin
-        ccc_valid_o = 1'b0;
-      end
-
-      DoRstAction: begin
-      end
-      HDRMode: begin
-        bus_rx_req_bit_o = '0;
-        bus_rx_req_byte_o = '0;
-        bus_tx_req_byte_o = '0;
-        bus_tx_req_bit_o = '0;
-        bus_tx_req_value_o = 8'h1;
-        tx_pr_start_o = '0;
-        tx_pr_abort_o = '0;
-        tx_host_nack_o = '0;
-        bus_addr_d = '0;
-        bus_addr_valid = '0;
-        bus_rnw_d = '0;
-        nack_transaction_d = '0;
-        parity_err_o = '0;
-        ibi_begin_o = '0;
-        ccc_valid_o = 1'b0;
-        ccc_code = '0;
-        ccc_code_valid = 1'b0;
-      end
-      DoHdrExit: begin
-      end
-      DoHotJoin: begin
-      end
-      WaitHDRExitOrIdle: begin
-        te0_detected_o = 1'b1;
-      end
-      default: ;
     endcase
   end
 
-  // State transitions
-  always_comb begin : state_transitions
+  // Main FSM
+  always_comb begin : fsm_target_main
+    tx_pr_start_o = 1'b0;
+    tx_pr_abort_o = 1'b0;
+    te2_err_priv_wr = 1'b0;
+
+    nack_transaction_d = 1'b0;
+
+    ccc_data       = ccc_cmd_e'('0);
+    ccc_data_valid = 1'b0;
+    ccc_valid_o    = 1'b0;
+
+    bus_addr_d     = '0;
+    bus_addr_valid = 1'b0;
+
+    bus_rnw_d = 1'b0;
+
+    bus_tx_req_o = '{
+      req_valid:  1'b0,
+      req_type:   RawBit,
+      drive_type: OpenDrain,
+      data:       '1
+    };
+
+    tx_fifo_rready_o = 1'b0;
+
+    bus_rx_req_bit  = 1'b0;
+    bus_rx_req_byte = 1'b0;
+
+    ibi_status_o     = IbiSuccess;
+    ibi_status_we_o  = 1'b0;
+    ibi_byte_ready_o = 1'b0;
+    ibi_byte_flush_o = 1'b0;
+
     state_d = state_q;
     case (state_q)
       Idle: begin
-        if (target_enable_i)
-          state_d = target_reset_detect_i ? DoRstAction :
-          // TODO: Add flow for Hot-Join
-          // do_hot_join        ? DoHotJoin :
-          (ibi_pending_i && ibi_enable_i && bus_free_i) ? DoIBI : bus_start_det ? RxFByte : Idle;
+        if (target_enable_i) begin
+          if (ibi_pending && (ibi_inhibit_q != InhibitRetry)) begin
+            if (!ibi_can_retry) begin
+              ibi_status_we_o = 1'b1;
+              ibi_status_o    = IbiFailureRetry;
+            end else if (bus_available_i) begin
+              state_d = IbiDriveAddr;
+            end
+          end
+          
+          // Reset detection and Start conditions overwrite the state_d decision above
+          // Any pending IBIs will be handled in RxFByteArb
+          if (target_reset_detect_i) begin
+            state_d = DoRstAction;
+          end else if (bus_start_det_i) begin
+            // In Idle, we only wait for a Start, which initiates the arbitrable address header
+            // Suppress arbitration after a lost IBI arbitration until bus available condition,
+            // as per Sect. 5.1.6.2, or if we already had a retry failure.
+            state_d = (ibi_pending && (ibi_inhibit_q == InhibitNone)) ? RxFByteArb : RxFByte;
+          end
+        end
       end
+
+      IbiDriveAddr: begin
+        // In this state, we send an IBI request to bus_tx_flow, which then first pulls SDA low and
+        // subsequently transmits our IBI address, starting at the following negedge of SCL.
+        bus_tx_req_o.req_valid = 1'b1;
+        bus_tx_req_o.req_type  = InitIbi;
+        bus_tx_req_o.data      = {target_ibi_addr_i, 1'b1};
+
+        if (bus_tx_rsp_i.done) begin
+          state_d = IbiReadAck;
+        end else if (arbitration_lost_i) begin
+          // Someone else decided to start transmitting an IBI at almost the exact same time and
+          // won arbitration - bad luck for us
+          ibi_status_we_o = 1'b1;
+          ibi_status_o    = IbiFailureAddressArb;
+          state_d = WaitRestart;
+        end
+      end
+      IbiReadAck: begin
+        bus_tx_req_o.req_valid = 1'b1;
+        bus_tx_req_o.req_type  = AckIbi;
+
+        // Note: Tx and Rx simultaneously! This relies on the 'done' being asserted for both at
+        // the rising edge of SCL!
+        bus_rx_req_bit = 1'b1;
+        if (bus_rx_rsp_i.done) begin
+          if (bus_rx_rsp_i.data[0]) begin
+            // Controller has NACKed our write request
+            ibi_status_we_o = 1'b1;
+            ibi_status_o    = IbiFailureNack;
+            state_d = WaitRestart;
+          end else begin
+            state_d = IbiSendData;
+          end
+        end
+      end
+      IbiSendData: begin
+        bus_tx_req_o.drive_type = PushPull;
+        bus_tx_req_o.req_valid  = 1'b1;
+        bus_tx_req_o.req_type   = RawByte;
+        bus_tx_req_o.data       = ibi_byte_i;
+
+        if (bus_tx_rsp_i.done) begin
+          ibi_byte_ready_o = 1'b1;
+          state_d = ibi_byte_last_i ? IbiTbitEnd : IbiTbitCont;
+        end
+      end
+      IbiTbitEnd: begin
+        bus_tx_req_o.req_valid = 1'b1;
+        bus_tx_req_o.req_type  = TReadEnd;
+
+        if (bus_tx_rsp_i.done) begin
+          ibi_status_we_o = 1'b1;
+          ibi_status_o    = IbiSuccess;
+          state_d = WaitRestart;
+        end
+      end
+      IbiTbitCont: begin
+        bus_tx_req_o.req_valid = 1'b1;
+        bus_tx_req_o.req_type  = TReadCont;
+        bus_tx_req_o.data      = ibi_byte_i;
+
+        if (bus_tx_rsp_i.abort) begin
+          // The host has pulled SDA low before the next SCL negedge to end the transfer (this is
+          // equivalent to a Rs condition) and cancelled the IBI prematurely
+          ibi_byte_flush_o = 1'b1;
+          ibi_status_we_o  = 1'b1;
+          ibi_status_o     = IbiFailurePartialData;
+          state_d = RxFByte;
+        end else if (bus_tx_rsp_i.done) begin
+          // TBit was successfully transmitted as high, we may therefore continue with the next byte
+          state_d = IbiSendData;
+        end
+      end
+
       RxFByte: begin
-        if (bus_rx_done_i) begin
+        bus_rx_req_byte = !bus_rstart_det_i;
+        if (bus_rx_rsp_i.done) begin
+          bus_addr_valid = 1'b1;
+          bus_addr_d     = bus_rx_rsp_i.data[7:1];
+          bus_rnw_d      = bus_rx_rsp_i.data[0];
+
           state_d = CheckFByte;
         end
       end
-      CheckFByte: begin
-        if (is_incorrect_addr_match) begin
-          state_d = WaitHDRExitOrIdle;
-        end else if (is_rsvd_byte_match || is_our_addr_match || is_virtual_addr_match) begin
-           // do not ACK transaction if it is read and we don't have data to send
-           if (~tx_desc_avail_i & bus_rnw_q) begin
-             state_d = Wait;
-           end else begin
-             state_d = TxAckFByte;
-           end
-        end else state_d = Wait;
-      end
-      TxAckFByte: begin
-        if (ack_done) begin
-          if (is_rsvd_byte_match) state_d = RxSByte;
-          else if ((is_our_addr_match || is_virtual_addr_match) && bus_rnw_q) state_d = TxPReadData;
-          else if ((is_our_addr_match || is_virtual_addr_match) && ~bus_rnw_q) state_d = RxPWriteData;
-          else state_d = Wait;
+
+      RxFByteArb: begin
+        bus_rx_req_byte = !bus_rstart_det_i;
+
+        // Currently, we only get to this state if there is a pending IBI, and IBIs are not surpressed
+        // Therefore, the only condition where we do not submit our IBI address is if the retry
+        // counter has hit the limit. In that case, and in case we lose arbitration during the address
+        // phase, we switch to RxFByte, which continues to hold bus_rx_req_byte high, and processes the
+        // received data. We only stay in RxFByteArb is we successfully initiated an IBI, in which case
+        // the "received" data is irrelevant, as it is our own IBI address.
+        if (ibi_can_retry) begin
+          bus_tx_req_o.req_valid  = 1'b1;
+          bus_tx_req_o.req_type   = RawByte;
+          bus_tx_req_o.drive_type = OpenDrain;
+          bus_tx_req_o.data       = {target_ibi_addr_i, 1'b1};
+
+          // On arb lost, inform IBI requester and hand over to regular RxFByte
+          // to receive rest of address.  When arb loss coincides with the
+          // final bit (RnW), bus_rx_rsp_i.done fires on the same clock;
+          // skip RxFByte and go directly to CheckFByte so the completed
+          // byte is not lost.
+          if (arbitration_lost_i) begin
+            ibi_status_we_o = 1'b1;
+            ibi_status_o    = IbiFailureAddressArb;
+            if (bus_rx_rsp_i.done) begin
+              bus_addr_valid = 1'b1;
+              bus_addr_d     = bus_rx_rsp_i.data[7:1];
+              bus_rnw_d      = bus_rx_rsp_i.data[0];
+              state_d = CheckFByte;
+            end else begin
+              state_d = RxFByte;
+            end
+          end else if (bus_tx_rsp_i.done) begin
+            // IBI address has been submitted successfully, we won arbitration. Continue with IBI.
+            state_d = IbiReadAck;
+          end
+        end else begin
+          // Retry count reached
+          ibi_status_we_o = 1'b1;
+          ibi_status_o    = IbiFailureRetry;
+          state_d = RxFByte;
         end
       end
+      CheckFByte: begin
+        // Signal begin of a private read
+        tx_pr_start_o = is_any_addr_match && bus_rnw_q;
+
+        if (is_rsvd_byte_match || is_any_addr_match) begin
+          // Do not ACK transaction if it is a read and we don't have data to send
+          if (~tx_desc_avail_i && bus_rnw_q) begin
+            state_d = WaitRestart;
+          end else begin
+            state_d = TxAckFByte;
+          end
+        end else begin
+          // Nothing on the bus happened which requires our action; wait for next (Re)Start condition.
+          state_d = WaitRestart;
+        end
+      end
+      TxAckFByte: begin
+        bus_tx_req_o.req_valid = 1'b1;
+        // Spec Annex A: Every "FByte" Ack is a Handoff except Private Reads after non-rsvd-Byte
+        bus_tx_req_o.req_type  = (bus_rnw_q && !is_rsvd_byte_match) ? AckRegular : AckHandoff;
+
+        if (bus_tx_rsp_i.done) begin
+          if (is_rsvd_byte_match) begin
+            state_d = RxSByte;
+          end else if (is_any_addr_match) begin
+            state_d = bus_rnw_q ? TxPReadData : RxPWriteData;
+          end else begin
+            state_d = WaitRestart;
+          end
+        end
+      end
+
       RxSByte: begin
-        if (bus_start_det) begin
+        bus_rx_req_byte = !bus_rstart_det_i;
+
+        if (bus_rstart_det_i) begin
           state_d = RxSByteRepeated;
-        end else if (bus_rx_done_i) begin
+        end else if (bus_rx_rsp_i.done) begin
+          // If we got CCC, this is the Command Code, we need to latch it for the CCC FSM
+          ccc_data_valid = 1'b1;
+          ccc_data       = ccc_cmd_e'(bus_rx_rsp_i.data);
+
           state_d = DoCCC;
         end
       end
       RxSByteRepeated: begin
-        if (bus_rx_done_i) begin
+        bus_rx_req_byte = !bus_rstart_det_i;
+
+        if (bus_rx_rsp_i.done) begin
+          bus_addr_valid = 1'b1;
+          bus_addr_d     = bus_rx_rsp_i.data[7:1];
+          bus_rnw_d      = bus_rx_rsp_i.data[0];
+
           state_d = CheckSByte;
         end
       end
       CheckSByte: begin
-        if (is_our_addr_match || is_virtual_addr_match) begin
-          // ACK the transaction if it is write
-          // If read, ACK only if we have data to send
-          if (tx_desc_avail_i | ~bus_rnw_q) begin
+        if (is_any_addr_match) begin
+          // Signal begin of a private read
+          tx_pr_start_o = bus_rnw_q;
+          if (!bus_rnw_q || tx_desc_avail_i) begin
+            // Either private write or private read and data available
             state_d = TxAckSByte;
           end else begin
-            // if there is no data to be sent, NACK the transaction
-            state_d = Wait;
+            // NAck in case of private read without data available
+            state_d = WaitRestart;
           end
-        end
-        else begin
-            state_d = Wait;
+        end else begin
+          state_d = WaitRestart;
         end
       end
       TxAckSByte: begin
-        if (ack_done) begin
-          if ((is_our_addr_match || is_virtual_addr_match) && bus_rnw_q) state_d = TxPReadData;
-          else if ((is_our_addr_match || is_virtual_addr_match) && ~bus_rnw_q) state_d = RxPWriteData;
-          else state_d = Wait;
+        bus_tx_req_o.req_valid = 1'b1;
+        // For Private Writes, perform AckHandoff
+        bus_tx_req_o.req_type  = bus_rnw_q ? AckRegular : AckHandoff;
+
+        if (bus_tx_rsp_i.done) begin
+          state_d = bus_rnw_q ? TxPReadData : RxPWriteData;
         end
       end
 
       // Private Write data loop
       RxPWriteData: begin
-        if (bus_start_det) state_d = RxFByte;
-        else if (bus_rx_done_i) state_d = RxPWriteTbit;
+        bus_rx_req_byte = !bus_rstart_det_i;
+
+        if (bus_rstart_det_i) begin
+          state_d = RxFByte;
+        end else if (bus_rx_rsp_i.done) begin
+          state_d = RxPWriteTbit;
+        end
       end
       RxPWriteTbit: begin
-        if (rx_tbit_done) state_d = RxPWriteData;
+        bus_rx_req_bit = !bus_rstart_det_i;
+
+        if (bus_rstart_det_i) begin
+          // Repeated Start during T-bit - new address phase
+          state_d = RxFByte;
+        end else if (bus_rx_rsp_i.done) begin
+          // Gate parity error detection with detection enable at the source
+          te2_err_priv_wr = te2_err_det_en_i && (parity_bit != bus_rx_rsp_i.data[0]);
+          state_d = RxPWriteData;
+        end
       end
 
       // Private Read data loop
       TxPReadData: begin
-        if (bus_start_det) state_d = RxFByte;
-        else if (bus_tx_done_i) state_d = TxPReadTbit;
+        bus_tx_req_o.drive_type = PushPull;
+        bus_tx_req_o.req_valid  = 1'b1;
+        bus_tx_req_o.req_type   = RawByte;
+        bus_tx_req_o.data       = tx_fifo_rdata_i;
+
+        // Neither stop nor restart may occur as SDA is under control of target. Therefore, we do
+        // not check for Rs or P here.
+
+        if (bus_tx_rsp_i.done) begin
+          // Acknowledge consumption of current byte
+          tx_fifo_rready_o = 1'b1;
+          // Signal continue or end of read
+          state_d = tx_last_byte_i ? TxPReadTbitEnd : TxPReadTbitCont;
+        end
       end
-      TxPReadTbit: begin
-        if (bus_start_det) state_d = RxFByte;
-        else if (tx_tbit_done)
-          // Continue transfer if FIFO is not empty or if it's the last byte
-          if ((tx_fifo_rvalid_i | tx_last_byte_i) & ~tx_end_xfer)
-            state_d = TxPReadData;
-          // Wait for START or STOP if it was the last byte already
-          else
-            state_d = Wait;
+      TxPReadTbitEnd: begin
+        bus_tx_req_o.req_valid = 1'b1;
+        bus_tx_req_o.req_type  = TReadEnd;
+
+        if (bus_tx_rsp_i.done) begin
+          state_d = WaitRestart;
+        end
+      end
+      TxPReadTbitCont: begin
+        // Special request type: We have to wait until the following SCL negedge to know whether the
+        // Controller has aborted the read prematurely. However, if not, we need to provide the MSB
+        // of the next byte on that very negedge. Therefore, already provide the next byte as part
+        // of this Tbit request; bus_tx_flow will handle all the low-level details.
+        bus_tx_req_o.req_valid = 1'b1;
+        bus_tx_req_o.req_type  = TReadCont;
+        bus_tx_req_o.data      = tx_fifo_rdata_i;
+
+        if (bus_tx_rsp_i.abort) begin
+          // The host has pulled SDA low before the next SCL negedge to end the transfer (this is
+          // equivalent to a Rs condition)
+          tx_pr_abort_o = 1'b1;
+          state_d = RxFByte;
+        end else if (bus_stop_det_i) begin
+          // Should not be possible: SDA is controlled in PP-high by us until the next SCL posedge
+          tx_pr_abort_o = 1'b1;
+          state_d = WaitRestart;
+        end else if (bus_tx_rsp_i.done) begin
+          // TBit was successfully transmitted as high, we may therefore continue with the next byte
+          state_d = TxPReadData;
+        end
       end
 
-      Wait: begin
-        if (bus_start_det) state_d = RxFByte;
-      end
-
-      DoIBI: begin
-        if (ibi_done_i) state_d = DoneIBI;
-      end
-      DoneIBI: begin
-        state_d = Idle;
+      WaitRestart: begin
+        nack_transaction_d = 1'b1;
+        if (bus_rstart_det_i) begin
+          state_d = RxFByte;
+        end
       end
 
       DoCCC: begin
-        if (is_ccc_done_i & invalid_ccc_i) state_d = WaitHDRExitOrIdle;
-        else if (is_ccc_done_i) state_d = DoneCCC;
-        else if (is_next_ccc_i) state_d = RxSByte;
+        ccc_valid_o = 1'b1;
+
+        if (is_ccc_done_i) begin
+          state_d = DoneCCC;
+        end else if (is_next_ccc_i) begin
+          state_d = RxSByte;
+        end
       end
       DoneCCC: begin
-        state_d = Idle;
+        // After CCC completes, check if we entered HDR mode
+        if (in_hdr_mode_i) begin
+          state_d = InHDRMode;
+        end else begin
+          state_d = Idle;
+        end
       end
 
       DoRstAction: begin
-        // Here, a reset of the core will happen
-        // so the state should transition to Idle anyway
+        // Here, a reset of the core will happen so the state should transition to Idle anyway
         // The transition should be explicit to avoid undefined behavior
         state_d = Idle;
       end
-      HDRMode: begin
-        if (~is_in_hdr_mode_i) state_d = Idle;
+
+      InHDRMode: begin
+        // Stay in HDR mode, ignoring all bus activity.
+        // Only hdr_exit_detect_i (handled below) can exit this state.
+        state_d = InHDRMode;
       end
-      DoHdrExit: begin
-        state_d = Idle;
-      end
+
       DoHotJoin: begin
-        if (is_hotjoin_done_i) state_d = Idle;
+        if (is_hotjoin_done_i) begin
+          state_d = Idle;
+        end
       end
-      WaitHDRExitOrIdle: begin
-        if (hdr_exit_detect_i | bus_idle_i) state_d = Idle;
-      end
-      default: begin
-        state_d = state_q;
-      end
+      default: begin end
     endcase
 
-    // Bypass state transition for HDR Exit Pattern
-    //if (hdr_exit_detect_i) state_d = DoHdrExit;
-    // park in HDR state if we're in HDR mode
-    if (is_in_hdr_mode_i) state_d = HDRMode;
-    // Bypass any state transition when a stop is received
-    // Unless in HDR or TE0/TE1 modes
-    if (bus_stop_det_i && ~is_in_hdr_mode_i && state_q != WaitHDRExitOrIdle) state_d = Idle;
+    // Priority overrides for bus conditions and HDR mode
+    // Order matters: HDR exit has highest priority, then HDR mode entry, then STOP
+    if (hdr_exit_detect_i && (state_q == InHDRMode)) begin
+      // HDR Exit Pattern detected - exit HDR mode
+      state_d = Idle;
+    end else if (in_hdr_mode_i) begin
+      // Enter InHDRMode immediately when in_hdr_mode_i asserts
+      state_d = InHDRMode;
+    end else if (bus_stop_det_i) begin
+      // STOP received in SDR mode - return to Idle
+      state_d = Idle;
+    end
   end
 
   // Synchronous state transition
   always_ff @(posedge clk_i or negedge rst_ni) begin : state_transition
     if (!rst_ni) begin
       state_q <= Idle;
+      ibi_retry_cnt_q <= 3'd0;
+      ibi_inhibit_q   <= InhibitNone;
     end else begin
       state_q <= state_d;
+      ibi_retry_cnt_q <= ibi_retry_cnt_d;
+      ibi_inhibit_q   <= ibi_inhibit_d;
     end
   end
 
@@ -659,6 +867,9 @@ module i3c_target_fsm #(
 
   always_ff @(posedge clk_i or negedge rst_ni) begin : virtual_device_sel_latch
     if (!rst_ni) begin
+      virtual_device_sel_o <= '0;
+    end else if (bus_any_start_det || bus_stop_det_i) begin
+      // Clear on Start/Repeated Start/Stop - transaction boundary
       virtual_device_sel_o <= '0;
     end else unique case(state_q)
       CheckFByte:
@@ -676,33 +887,24 @@ module i3c_target_fsm #(
     if (!rst_ni) begin
       xfer_in_progress_o <= '0;
     end else unique case(state_q)
-      Idle:
-        xfer_in_progress_o <= '0;
-      CheckFByte:
-        xfer_in_progress_o <= (is_our_addr_match || is_virtual_addr_match);
-      CheckSByte:
-        xfer_in_progress_o <= (is_our_addr_match || is_virtual_addr_match);
-      default:
-        xfer_in_progress_o <= xfer_in_progress_o;
+      Idle:       xfer_in_progress_o <= '0;
+      CheckFByte: xfer_in_progress_o <= is_any_addr_match;
+      CheckSByte: xfer_in_progress_o <= is_any_addr_match;
+      default:    xfer_in_progress_o <= xfer_in_progress_o;
     endcase
   end
 
-  // TODO: Also sub FSM should contribute
-  // TODO: Maybe we can do it based on write module rather than states
-  assign target_transmitting_o =
-  (state_q inside {TxAckFByte, TxAckSByte, TxPReadData, TxPReadTbit});
-
-  // TODO: Count which transaction and transfers were addressed to us
-  // TODO: Expose xfer,xact counters
+  // FUTUREFIX: v1p5 deferral — xfer/xact counters and cmd completion tracking
   assign event_cmd_complete_o = '0;
 
-  // TODO: Handle events
+  // FUTUREFIX: v1p5 deferral — event detection (unexpected stop, arb lost, timeout, read cmd)
   assign event_unexp_stop_o = '0;
   assign event_tx_arbitration_lost_o = '0;
   assign event_tx_bus_timeout_o = '0;
   assign event_read_cmd_received_o = '0;
 
   // Record each transaction that gets NACK'd.
+  // FUTUREFIX This is not true every time we wait for a start! Also, just make this a simple pulse!
   assign event_target_nack_o = !nack_transaction_q && nack_transaction_d;
 
 `ifndef SYNTHESIS
@@ -711,9 +913,9 @@ module i3c_target_fsm #(
     @(posedge clk_i)
     (
       $rose(bus_addr_valid) |=>
-      ##2 ((is_rsvd_byte_match || is_our_addr_match || is_virtual_addr_match) && ~bus_tx_req_value_o[0])
+      ##2 ((is_rsvd_byte_match || is_any_addr_match) && ~bus_tx_req_o.data[7])
       ##1 @(posedge scl_negedge_i) ##1
-      ##1 @(posedge clk_i) ##1 $fell(bus_tx_req_bit_o)
+      ##1 @(posedge clk_i) ##1 $fell(bus_tx_req_bit)
     );
   endproperty : cover_known_addr_ack
   covprop_known_addr_ack: cover property (cover_known_addr_ack);
@@ -722,9 +924,9 @@ module i3c_target_fsm #(
     @(posedge clk_i)
     (
       $rose(bus_addr_valid) |=>
-      ##2 (~(is_rsvd_byte_match || is_our_addr_match || is_virtual_addr_match) && bus_tx_req_value_o[0])
+      ##2 (~(is_rsvd_byte_match || is_any_addr_match) && bus_tx_req_o.data[7])
       ##1 @(posedge scl_negedge_i) ##1
-      ##1 @(posedge clk_i) ##1 ($stable(bus_tx_req_bit_o) && ~bus_tx_req_bit_o)
+      ##1 @(posedge clk_i) ##1 ($stable(bus_tx_req_bit) && ~bus_tx_req_bit)
     );
   endproperty : cover_unknown_addr_nack
   covprop_unknown_addr_nack: cover property (cover_unknown_addr_nack);
@@ -736,12 +938,12 @@ module i3c_target_fsm #(
       bins valid_start_trans =
         (Idle => RxFByte);
       bins valid_rstart_trans =
-        (RxPWriteData, TxPReadData, TxPReadTbit, Wait => RxFByte),
+        (RxPWriteData, TxPReadData, TxPReadTbitCont, WaitRestart => RxFByte),
         (RxSByte => RxSByteRepeated);
       bins valid_stop_trans =
         (RxFByte, CheckFByte, TxAckFByte, RxSByte, RxSByteRepeated, CheckSByte, TxAckSByte,
-         RxPWriteData, RxPWriteTbit, TxPReadData, TxPReadTbit, Wait, DoIBI, DoneIBI, DoCCC,
-         DoneCCC, DoHotJoin, DoRstAction, DoHdrExit => Idle);
+         RxPWriteData, RxPWriteTbit, TxPReadData, WaitRestart, DoCCC,
+         DoneCCC, DoHotJoin, DoRstAction, InHDRMode => Idle);
     }
     BusStartEvent: coverpoint bus_start_det_i {
       bins start_detected = {1'b1};

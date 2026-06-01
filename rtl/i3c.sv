@@ -42,13 +42,13 @@ module i3c
 
 `ifdef CONTROLLER_SUPPORT
     parameter int unsigned HciRespFifoDepth = `RESP_FIFO_DEPTH,
-    parameter int unsigned HciCmdFifoDepth = `CMD_FIFO_DEPTH,
-    parameter int unsigned HciRxFifoDepth = `RX_FIFO_DEPTH,
-    parameter int unsigned HciTxFifoDepth = `TX_FIFO_DEPTH,
+    parameter int unsigned HciCmdFifoDepth  = `CMD_FIFO_DEPTH,
+    parameter int unsigned HciRxFifoDepth   = `RX_FIFO_DEPTH,
+    parameter int unsigned HciTxFifoDepth   = `TX_FIFO_DEPTH,
 `ifdef IBI_FIFO_EXT_SIZE
-    parameter int unsigned HciIbiFifoDepth = 8 * `IBI_FIFO_DEPTH,
+    parameter int unsigned HciIbiFifoDepth  = 8 * `IBI_FIFO_DEPTH,
 `else
-    parameter int unsigned HciIbiFifoDepth = `IBI_FIFO_DEPTH,
+    parameter int unsigned HciIbiFifoDepth  = `IBI_FIFO_DEPTH,
 `endif
 
     localparam int unsigned HciRespFifoDepthWidth = $clog2(HciRespFifoDepth + 1),
@@ -64,16 +64,16 @@ module i3c
     parameter int unsigned HciIbiDataWidth  = 32,
 
     parameter int unsigned HciRespThldWidth = 8,
-    parameter int unsigned HciCmdThldWidth  = 8,
-    parameter int unsigned HciRxThldWidth   = 3,
-    parameter int unsigned HciTxThldWidth   = 3,
-    parameter int unsigned HciIbiThldWidth  = 8,
-`endif // CONTROLLER_SUPPORT
+    parameter int unsigned HciCmdThldWidth = 8,
+    parameter int unsigned HciRxThldWidth = 3,
+    parameter int unsigned HciTxThldWidth = 3,
+    parameter int unsigned HciIbiThldWidth = 8,
+`endif  // CONTROLLER_SUPPORT
 `ifdef TARGET_SUPPORT
-    parameter int unsigned TtiRxDescFifoDepth = `RESP_FIFO_DEPTH,
-    parameter int unsigned TtiTxDescFifoDepth = `CMD_FIFO_DEPTH,
-    parameter int unsigned TtiRxFifoDepth = `RX_FIFO_DEPTH,
-    parameter int unsigned TtiTxFifoDepth = `TX_FIFO_DEPTH,
+    parameter int unsigned TtiRxDescFifoDepth = `TTI_RX_DESC_FIFO_DEPTH,
+    parameter int unsigned TtiTxDescFifoDepth = `TTI_TX_DESC_FIFO_DEPTH,
+    parameter int unsigned TtiRxFifoDepth = `TTI_RX_FIFO_DEPTH,
+    parameter int unsigned TtiTxFifoDepth = `TTI_TX_FIFO_DEPTH,
 `ifdef IBI_FIFO_EXT_SIZE
     parameter int unsigned TtiIbiFifoDepth = 8 * `IBI_FIFO_DEPTH,
 `else
@@ -96,7 +96,8 @@ module i3c
     parameter int unsigned TtiRxThldWidth = 3,
     parameter int unsigned TtiTxThldWidth = 3,
     parameter int unsigned TtiIbiThldWidth = 8,
-`endif // TARGET_SUPPORT
+`endif  // TARGET_SUPPORT
+
     parameter int unsigned IndirectFifoDepth = 64
 ) (
     input clk_i,  // clock
@@ -177,8 +178,8 @@ module i3c
     input  logic                    bready_i,
 `ifdef AXI_ID_FILTERING
     // ID Filtering
-    input logic disable_id_filtering_i,
-    input logic [AxiUserWidth-1:0] priv_ids_i [NumPrivIds],
+    input  logic                    disable_id_filtering_i,
+    input  logic [AxiUserWidth-1:0] priv_ids_i            [NumPrivIds],
 `endif
 `endif
 
@@ -192,7 +193,8 @@ module i3c
     input  logic i3c_sda_i,  // serial data input from i3c bus
     output logic i3c_sda_o,  // serial data output to i3c bus
 
-    output logic sel_od_pp_o,  // 0 - Open Drain, 1 - Push Pull
+    output logic i3c_sda_oe_o,  // Pad output enable
+    output logic sel_od_pp_o,   // 0 - Open Drain, 1 - Push Pull
 
 `ifdef CONTROLLER_SUPPORT
     // DAT memory export interface
@@ -202,7 +204,7 @@ module i3c
     // DCT memory export interface
     input  dct_mem_src_t  dct_mem_src_i,
     output dct_mem_sink_t dct_mem_sink_o,
-`endif // CONTROLLER_SUPPORT
+`endif  // CONTROLLER_SUPPORT
 
     // Recovery interface signals
     output logic recovery_payload_available_o,
@@ -284,24 +286,24 @@ module i3c
   logic                             hci_ibi_wvalid;
   logic                             hci_ibi_wready;
   logic [      HciIbiDataWidth-1:0] hci_ibi_wdata;
+`endif  // CONTROLLER_SUPPORT
 
 `ifdef CONTROLLER_SUPPORT
   // DAT <-> Controller interface
-  logic                             dat_read_valid_hw;
-  logic [   $clog2(`DAT_DEPTH)-1:0] dat_index_hw;
-  logic [                     63:0] dat_rdata_hw;
+  logic                          dat_read_valid_hw;
+  logic [$clog2(`DAT_DEPTH)-1:0] dat_index_hw;
+  logic [                  63:0] dat_rdata_hw;
 
   // DCT <-> Controller interface
-  logic                             dct_write_valid_hw;
-  logic                             dct_read_valid_hw;
-  logic [   $clog2(`DCT_DEPTH)-1:0] dct_index_hw;
-  logic [                    127:0] dct_wdata_hw;
-  logic [                    127:0] dct_rdata_hw;
-`endif // CONTROLLER_SUPPORT
-
+  logic                          dct_write_valid_hw;
+  logic                          dct_read_valid_hw;
+  logic [$clog2(`DCT_DEPTH)-1:0] dct_index_hw;
+  logic [                 127:0] dct_wdata_hw;
+  logic [                 127:0] dct_rdata_hw;
 `endif  // CONTROLLER_SUPPORT
+
 `ifdef TARGET_SUPPORT
-  // TTI TX descriptors queue
+  // TTI RX descriptors queue
   logic                               tti_tx_desc_full;
   logic [TtiRxDescFifoDepthWidth-1:0] tti_tx_desc_depth;
   logic [     TtiRxDescThldWidth-1:0] tti_tx_desc_ready_thld;
@@ -311,7 +313,7 @@ module i3c
   logic                               tti_tx_desc_rready;
   logic [     TtiRxDescDataWidth-1:0] tti_tx_desc_rdata;
 
-  // TTI RX descriptors queue
+  // TTI TX descriptors queue
   logic                               tti_rx_desc_full;
   logic [TtiTxDescFifoDepthWidth-1:0] tti_rx_desc_depth;
   logic [     TtiTxDescThldWidth-1:0] tti_rx_desc_ready_thld;
@@ -333,6 +335,7 @@ module i3c
   logic                               tti_rx_wready;
   logic [                        7:0] tti_rx_wdata;
   logic                               tti_rx_flush;
+  logic                               tti_rx_wlast;
 
   // TTI TX queue
   logic                               tti_tx_full;
@@ -361,13 +364,15 @@ module i3c
   logic                               tti_ibi_rvalid;
   logic                               tti_ibi_rready;
   logic [        TtiIbiDataWidth-1:0] tti_ibi_rdata;
+  logic                               csr_tti_ibi_reg_rst;
 `endif  // TARGET_SUPPORT
 
-  // TODO: Fix these signals
-  // Originally only used in active, should be removed and replaced with signal from CSR
+  // FUTUREFIX: Not needed for v1p5: i3c_fsm_en_i and i3c_fsm_idle_o are used exclusively by the
+  // active controller path (flow_active.sv). They were moved from top-level I/O to internal
+  // wires and hardcoded to inactive. To enable active controller support in the future,
+  // replace i3c_fsm_en_i with a CSR-driven enable and route i3c_fsm_idle_o to a status register.
   logic i3c_fsm_en_i;
   assign i3c_fsm_en_i = 1'b0;
-  // This signal should only be used on level of fsm/flow modules. Expose it via CSR, if needed.
   logic i3c_fsm_idle_o;
 
 `ifdef I3C_USE_AHB
@@ -481,74 +486,97 @@ module i3c
   );
 `endif
 
-  logic phy2ctrl_scl;
-  logic phy2ctrl_sda;
-  logic ctrl2phy_scl;
-  logic ctrl2phy_sda;
-  logic ctrl_sel_od_pp;
+  logic               phy2ctrl_scl;
+  logic               phy2ctrl_sda;
+  logic               ctrl2phy_scl;
+  logic               ctrl2phy_sda;
+  logic               ctrl_sel_od_pp;
+  logic               ctrl_sda_oe;
 
   // Interrupts
-  logic ctl_irq;
-  logic tti_irq;
-  logic recovery_irq;
+  i3c_irq_t           ctrl_int_stat;
+  logic               ctrl_irq;
+  logic               tti_irq;
+  logic               recovery_irq;
 
-  logic bus_start;
-  logic bus_rstart;
-  logic bus_stop;
+  logic               bus_start;
+  logic               bus_rstart;
+  logic               bus_stop;
 
-  logic [7:0] rx_bus_addr;
-  logic rx_bus_addr_valid;
-  logic [6:0] set_dasa;
-  logic set_dasa_valid;
-  logic set_dasa_virtual_device;
-  logic set_aasa;
-  logic set_aasa_virt;
-  logic set_newda;
-  logic set_newda_virtual_device;
-  logic [6:0] newda;
-  logic rstdaa;
+  logic        [ 7:0] rx_bus_addr;
+  logic               rx_bus_addr_valid;
+  logic        [ 6:0] set_dasa;
+  logic               set_dasa_valid;
+  logic               set_dasa_virtual_device;
+  logic               set_aasa;
+  logic               set_aasa_virt;
+  logic               set_newda;
+  logic               set_newda_virtual_device;
+  logic        [ 6:0] newda;
+  logic               rstdaa;
 
-  logic enec_ibi;
-  logic enec_crr;
-  logic enec_hj;
-  logic disec_ibi;
-  logic disec_crr;
-  logic disec_hj;
+  logic               enec_ibi;
+  logic               enec_crr;
+  logic               enec_hj;
+  logic               disec_ibi;
+  logic               disec_crr;
+  logic               disec_hj;
 
-  logic [7:0] rst_action;
-  logic rst_action_valid;
+  logic        [ 7:0] rst_action;
+  logic               rst_action_valid;
 
+  logic        [15:0] mwl;
+  logic               set_mwl;
+  logic        [15:0] mrl;
+  logic               set_mrl;
+  logic        [ 7:0] ibil;
+  logic               set_ibil;
 
   // Status
-  logic [1:0] ibi_status;
-  logic ibi_status_we;
+  ibi_status_e        ibi_status;
+  logic               ibi_status_we;
+  logic               ibi_pending;
 
-  logic controller_error;
+  logic               ri_pec_err;
+  logic               ri_length_err;
+  logic               ri_readonly_err;
+  logic               ri_unsupported_err;
+  logic               ri_rx_fifo_overflow_err;
+  logic               ri_indirect_fifo_overflow_err;
+  logic               target_error;
+  logic transfer_abort, hc_err_cmd_seq_timeout_stat, hc_seq_cancel_stat;
 
-  logic recovery_mode_enter;
-  logic recovery_mode_enabled;
+
+  // Individual TE error signals for interrupt reporting
+  logic te0_err;
+  logic te1_err;
+  logic te2_err;
+  logic te3_err;
+  logic te4_err;
+  logic te5_err;
+  logic framing_err;
+
   logic virtual_device_sel;
   logic xfer_in_progress;
+  logic in_hdr_mode;
 
   logic arbitration_lost, arbitration_lost_q;
   logic bus_scl_posedge;
 
-  assign arbitration_lost = phy2ctrl_sda != i3c_sda_o;
+  assign arbitration_lost   = phy2ctrl_sda != i3c_sda_o;
   assign arbitration_lost_q = arbitration_lost & bus_scl_posedge;
 
   // CSR Interface
 `ifdef TARGET_SUPPORT
   // Target Transaction CSR Interface
-  I3CCSR_pkg::I3CCSR__I3C_EC__TTI__in_t hwif_tti_in;
   I3CCSR_pkg::I3CCSR__I3C_EC__TTI__out_t hwif_tti_out;
+  I3CCSR_pkg::I3CCSR__I3C_EC__TTI__in_t hwif_tti_inp;
 
-  // Recovery CSR Interface
-  I3CCSR_pkg::I3CCSR__I3C_EC__SecFwRecoveryIf__in_t hwif_rec_in;
+  I3CCSR_pkg::I3CCSR__I3C_EC__SoCMgmtIf__out_t hwif_socmgmt_out;
+  I3CCSR_pkg::I3CCSR__I3C_EC__SoCMgmtIf__in_t hwif_socmgmt_inp;
+
   I3CCSR_pkg::I3CCSR__I3C_EC__SecFwRecoveryIf__out_t hwif_rec_out;
-
-  // SoC Management CSR Interface
-  I3CCSR_pkg::I3CCSR__I3C_EC__SoCMgmtIf__in_t hwif_soc_mgmt_in;
-  I3CCSR_pkg::I3CCSR__I3C_EC__SoCMgmtIf__out_t hwif_soc_mgmt_out;
+  I3CCSR_pkg::I3CCSR__I3C_EC__SecFwRecoveryIf__in_t hwif_rec_inp;
 `endif  // TARGET_SUPPORT
 
 `ifdef CONTROLLER_SUPPORT
@@ -577,7 +605,6 @@ module i3c
 `else
   assign bypass_i3c_core = '0;
 `endif
-  logic unused_err;
 
   controller #(
       .DatAw(DatAw),
@@ -590,6 +617,7 @@ module i3c
       .sda_i(phy2ctrl_sda),
       .scl_o(ctrl2phy_scl),
       .sda_o(ctrl2phy_sda),
+      .sda_oe_o(ctrl_sda_oe),
       .sel_od_pp_o(ctrl_sel_od_pp),
       .arbitration_lost_i(arbitration_lost_q),
 
@@ -638,7 +666,7 @@ module i3c
       .hci_tx_queue_rready_o(hci_tx_rready),
       .hci_tx_queue_rdata_i(hci_tx_rdata),
 
-      // In-band Interrupt queue
+      // In-band Interrut queue
       .hci_ibi_queue_full_i(hci_ibi_full),
       .hci_ibi_queue_depth_i(hci_ibi_depth),
       .hci_ibi_queue_ready_thld_i(hci_ibi_ready_thld),
@@ -672,6 +700,7 @@ module i3c
       .tti_rx_queue_wready_i(tti_rx_wready),
       .tti_rx_queue_wdata_o(tti_rx_wdata),
       .tti_rx_queue_flush_o(tti_rx_flush),
+      .tti_rx_queue_wlast_o(tti_rx_wlast),
 
       // TTI: TX Descriptor
       .tti_tx_desc_queue_full_i(tti_tx_desc_full),
@@ -708,12 +737,13 @@ module i3c
       .tti_ibi_queue_rvalid_i(tti_ibi_rvalid),
       .tti_ibi_queue_rready_o(tti_ibi_rready),
       .tti_ibi_queue_rdata_i(tti_ibi_rdata),
+      .tti_ibi_queue_clear_i(csr_tti_ibi_reg_rst),
 `endif  // TARGET_SUPPORT
 
       // I2C/I3C bus condition detection
-      .bus_start_o (bus_start),
+      .bus_start_o(bus_start),
       .bus_rstart_o(bus_rstart),
-      .bus_stop_o  (bus_stop),
+      .bus_stop_o(bus_stop),
       .bus_scl_posedge_o(bus_scl_posedge),
 
       // I2C/I3C received address (with RnW# bit) for the recovery handler
@@ -721,6 +751,7 @@ module i3c
       .bus_addr_valid_o(rx_bus_addr_valid),
 `ifdef CONTROLLER_SUPPORT
       // DAT <-> Controller interface
+      .dat_mem_sink_i(dat_mem_sink_o),  // used for the dynamic address -> DAT index reverse lookup table
       .dat_read_valid_hw_o(dat_read_valid_hw),
       .dat_index_hw_o(dat_index_hw),
       .dat_rdata_hw_i(dat_rdata_hw),
@@ -732,17 +763,17 @@ module i3c
       .dct_wdata_hw_o(dct_wdata_hw),
       .dct_rdata_hw_i(dct_rdata_hw),
 `endif
-      //TODO: Rename
-      .i3c_fsm_en_i  (i3c_fsm_en_i),
+      .i3c_fsm_en_i(i3c_fsm_en_i),
       .i3c_fsm_idle_o(i3c_fsm_idle_o),
 
-      .err(unused_err),  // TODO: Handle errors
-      .irq(ctl_irq),
+      .ctrl_int_stat_o(ctrl_int_stat),
+      .ctrl_irq_o(ctrl_irq),
       .hwif_out_i(hwif_out),
       .hwif_rec_i(hwif_rec_out),
 
       .ibi_status_o(ibi_status),
       .ibi_status_we_o(ibi_status_we),
+      .ibi_pending_o(ibi_pending),
 
       .set_dasa_o(set_dasa),
       .set_dasa_valid_o(set_dasa_valid),
@@ -757,6 +788,13 @@ module i3c
       .rst_action_o(rst_action),
       .rst_action_valid_o(rst_action_valid),
 
+      .set_mwl_o(set_mwl),
+      .set_mrl_o(set_mrl),
+      .set_ibil_o(set_ibil),
+      .mwl_o(mwl),
+      .mrl_o(mrl),
+      .ibil_o(ibil),
+
       .enec_ibi_o (enec_ibi),
       .enec_crr_o (enec_crr),
       .enec_hj_o  (enec_hj),
@@ -768,11 +806,30 @@ module i3c
       .peripheral_reset_done_i,
       .escalated_reset_o,
 
-      .err_o(controller_error),
-      .recovery_mode_enter_i(recovery_mode_enter),
+      .err_o(target_error),
+
+      .te0_err_o(te0_err),
+      .te1_err_o(te1_err),
+      .te2_err_o(te2_err),
+      .te3_err_o(te3_err),
+      .te4_err_o(te4_err),
+      .te5_err_o(te5_err),
+      .framing_err_o(framing_err),
+
+      // Target error detection enables (directly from TTI CSR)
+      .te0_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.TE0_ERR_DET_EN.value),
+      .te1_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.TE1_ERR_DET_EN.value),
+      .te2_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.TE2_ERR_DET_EN.value),
+      .te3_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.TE3_ERR_DET_EN.value),
+      .te4_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.TE4_ERR_DET_EN.value),
+      .te5_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.TE5_ERR_DET_EN.value),
+      .framing_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.FRAMING_ERR_DET_EN.value),
+
       .virtual_device_sel_o(virtual_device_sel),
-      .xfer_in_progress_o(xfer_in_progress)
+      .xfer_in_progress_o(xfer_in_progress),
+      .in_hdr_mode_o(in_hdr_mode)
   );
+
 
   // HCI
 `ifdef CONTROLLER_SUPPORT
@@ -877,8 +934,7 @@ module i3c
       .hci_ibi_wready_o(hci_ibi_wready),
       .hci_ibi_wdata_i(hci_ibi_wdata),
 
-      .rst_action_i(rst_action),
-      .rst_action_valid_i(rst_action_valid)
+      .ctrl_int_stat_i(ctrl_int_stat)
   );
 `endif  // CONTROLLER_SUPPORT
 
@@ -934,7 +990,6 @@ module i3c
   logic                          csr_tti_ibi_ack;
   logic [      CsrDataWidth-1:0] csr_tti_ibi_data;
   logic [   TtiIbiThldWidth-1:0] csr_tti_ibi_ready_thld;
-  logic                          csr_tti_ibi_reg_rst;
   logic                          csr_tti_ibi_reg_rst_we;
   logic                          csr_tti_ibi_reg_rst_data;
 `endif  // TARGET_SUPPORT
@@ -945,7 +1000,7 @@ module i3c
       .rst_ni(rst_ni),
 
       .hwif_tti_i(hwif_tti_out),
-      .hwif_tti_o(hwif_tti_in),
+      .hwif_tti_o(hwif_tti_inp),
 
       // TTI RX descriptors queue
       .rx_desc_queue_req_o            (csr_tti_rx_desc_req),
@@ -1003,6 +1058,7 @@ module i3c
 
       // TTI In-band Interrupt (IBI) queue
       .ibi_queue_full_i        (tti_ibi_full),
+      .ibi_queue_empty_i       (tti_ibi_empty),
       .ibi_queue_req_o         (csr_tti_ibi_req),
       .ibi_queue_ack_i         (csr_tti_ibi_ack),
       .ibi_queue_data_o        (csr_tti_ibi_data),
@@ -1011,11 +1067,21 @@ module i3c
       .ibi_queue_reg_rst_we_i  (csr_tti_ibi_reg_rst_we),
       .ibi_queue_reg_rst_data_i(csr_tti_ibi_reg_rst_data),
 
+      // Queue depth and status for CSR registers
+      .rx_desc_queue_depth_i(8'(tti_rx_desc_depth)),
+      .tx_desc_queue_depth_i(8'(tti_tx_desc_depth)),
+      .rx_data_queue_depth_i(8'(tti_rx_depth)),
+      .tx_data_queue_depth_i(8'(tti_tx_depth)),
+      .ibi_queue_depth_i    (8'(tti_ibi_depth)),
+      .tx_desc_queue_empty_i(tti_tx_desc_empty),
+      .tx_data_queue_empty_i(tti_tx_empty),
+
       .bypass_i3c_core_i(bypass_i3c_core),
 
-      .recovery_mode_enabled_i(recovery_mode_enabled),
+      .virtual_device_sel_i(virtual_device_sel),
       .ibi_status_i(ibi_status),
       .ibi_status_we_i(ibi_status_we),
+      .ibi_pending_i(ibi_pending),
       .tx_pr_end_i(tti_tx_pr_end),
       .tx_pr_start_i(tti_tx_pr_start),
 
@@ -1026,7 +1092,22 @@ module i3c
       .disec_crr_i(disec_crr),
       .disec_hj_i (disec_hj),
 
-      .err_i(controller_error),
+      .err_i(target_error),
+
+      // TE error inputs for interrupt reporting
+      .te0_err_i(te0_err),
+      .te1_err_i(te1_err),
+      .te2_err_i(te2_err),
+      .te3_err_i(te3_err),
+      .te4_err_i(te4_err),
+      .te5_err_i(te5_err),
+      .framing_err_i(framing_err),
+      .ri_pec_err_i(ri_pec_err),
+      .ri_length_err_i(ri_length_err),
+      .ri_readonly_err_i(ri_readonly_err),
+      .ri_unsupported_err_i(ri_unsupported_err),
+      .ri_rx_fifo_overflow_err_i(ri_rx_fifo_overflow_err),
+      .ri_indirect_fifo_overflow_err_i(ri_indirect_fifo_overflow_err),
 
       .irq_o(tti_irq)
   );
@@ -1055,12 +1136,12 @@ module i3c
 
       // CSR Interface
 `ifdef TARGET_SUPPORT
-      .hwif_tti_i(hwif_tti_in),
+      .hwif_tti_i(hwif_tti_inp),
       .hwif_tti_o(hwif_tti_out),
-      .hwif_rec_i(hwif_rec_in),
+      .hwif_rec_i(hwif_rec_inp),
       .hwif_rec_o(hwif_rec_out),
-      .hwif_socmgmt_i(hwif_soc_mgmt_in),
-      .hwif_socmgmt_o(hwif_soc_mgmt_out),
+      .hwif_socmgmt_i(hwif_socmgmt_inp),
+      .hwif_socmgmt_o(hwif_socmgmt_out),
 `endif
 `ifdef CONTROLLER_SUPPORT
       .hwif_pio_control_i(hwif_pio_control_in),
@@ -1084,6 +1165,13 @@ module i3c
       .set_newda_i(set_newda),
       .set_newda_virtual_device_i(set_newda_virtual_device),
       .newda_i(newda),
+
+      .set_mwl_i(set_mwl),
+      .set_mrl_i(set_mrl),
+      .set_ibil_i(set_ibil),
+      .mwl_i(mwl),
+      .mrl_i(mrl),
+      .ibil_i(ibil),
 
       .rst_action_i(rst_action),
       .rst_action_valid_i(rst_action_valid)
@@ -1113,13 +1201,13 @@ module i3c
       .clk_i (clk_i),
       .rst_ni(rst_ni),
 
-      // SoC Management CSR interface
-      .hwif_socmgmt_i(hwif_soc_mgmt_out),
-      .hwif_socmgmt_o(hwif_soc_mgmt_in),
+      // SoC Managment CSR interface
+      .hwif_socmgmt_i(hwif_socmgmt_out),
+      .hwif_socmgmt_o(hwif_socmgmt_inp),
 
       // Recovery CSR interface
       .hwif_rec_i(hwif_rec_out),
-      .hwif_rec_o(hwif_rec_in),
+      .hwif_rec_o(hwif_rec_inp),
 
       .bypass_i3c_core_i(bypass_i3c_core),
 
@@ -1206,6 +1294,7 @@ module i3c
       .ctl_tti_rx_data_queue_wready_o(tti_rx_wready),
       .ctl_tti_rx_data_queue_wdata_i(tti_rx_wdata),
       .ctl_tti_rx_data_queue_flush_i(tti_rx_flush),
+      .ctl_tti_rx_data_queue_wlast_i(tti_rx_wlast),
       .ctl_tti_rx_data_queue_start_thld_o(tti_rx_start_thld),
       .ctl_tti_rx_data_queue_start_thld_trig_o(tti_rx_start_thld_trig),
       .ctl_tti_rx_data_queue_ready_thld_o(tti_rx_ready_thld),
@@ -1242,16 +1331,28 @@ module i3c
       .image_activated_o  (recovery_image_activated_o),
 
       // I2C/I3C bus condition detection
-      .ctl_bus_start_i(bus_start | bus_rstart),  // S/Sr are both used to reset PEC
-      .ctl_bus_stop_i (bus_stop),
+      .ctl_bus_start_i(bus_start),  // Start condition (S)
+      .ctl_bus_rstart_i(bus_rstart),  // Repeated Start condition (Sr)
+      .ctl_bus_stop_i(bus_stop),
+      .ctl_in_hdr_mode_i(in_hdr_mode),
 
       // Received I2C/I3C address along with RnW# bit
       .ctl_bus_addr_i(rx_bus_addr),
       .ctl_bus_addr_valid_i(rx_bus_addr_valid),
-      .recovery_mode_enter_o(recovery_mode_enter),
-      .recovery_mode_enabled_o(recovery_mode_enabled),
       .virtual_device_sel_i(virtual_device_sel),
-      .xfer_in_progress_i(xfer_in_progress)
+      .xfer_in_progress_i(xfer_in_progress),
+      .pec_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.RI_PEC_ERR_DET_EN.value),
+      .length_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.RI_LENGTH_ERR_DET_EN.value),
+      .readonly_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.RI_READONLY_ERR_DET_EN.value),
+      .unsupported_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.RI_UNSUPPORTED_ERR_DET_EN.value),
+      .rx_fifo_overflow_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.RI_RX_FIFO_OVERFLOW_ERR_DET_EN.value),
+      .indirect_fifo_overflow_err_det_en_i(hwif_tti_out.TARGET_ERR_CTRL.RI_INDIRECT_FIFO_OVERFLOW_ERR_DET_EN.value),
+      .pec_err_o(ri_pec_err),
+      .length_err_o(ri_length_err),
+      .readonly_err_o(ri_readonly_err),
+      .unsupported_err_o(ri_unsupported_err),
+      .rx_fifo_overflow_err_o(ri_rx_fifo_overflow_err),
+      .indirect_fifo_overflow_err_o(ri_indirect_fifo_overflow_err)
   );
 `else
   assign recovery_irq = '0;
@@ -1269,11 +1370,13 @@ module i3c
       .ctrl_sda_i(ctrl2phy_sda),
       .ctrl_scl_o(phy2ctrl_scl),
       .ctrl_sda_o(phy2ctrl_sda),
+      .ctrl_sda_oe_i(ctrl_sda_oe),
+      .ctrl_sda_oe_o(i3c_sda_oe_o),
       .sel_od_pp_i(ctrl_sel_od_pp),
       .sel_od_pp_o(sel_od_pp_o)
   );
 
   // Aggregate interrupts
-  assign irq_o = ctl_irq | tti_irq | recovery_irq;
+  assign irq_o = ctrl_irq | tti_irq | recovery_irq;
 
 endmodule
