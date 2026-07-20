@@ -3,7 +3,7 @@ upstream:
   type: "standalone"
   repo: https://github.com/chipsalliance/i3c-core
   branch: main
-  commit: f8ea634fd2719d4870ec78e739d6222a6b33fcac
+  commit: ab6daf3d7a7d511887c6540cb0a444b7c488e6a1
 import:
   rtl:
     - path: "src"
